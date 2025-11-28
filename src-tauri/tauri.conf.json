@@ -1,0 +1,56 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "LawVault",
+  "version": "0.2.1",
+  "identifier": "com.lslby.lawvault",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:14200",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "LawVault - 智能法条库",
+        "url": "index.html",
+        "width": 1200,
+        "height": 800,
+        "decorations": false,
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "copyright": "版权所有 © 2025 李伯阳律师",
+    "shortDescription": "本地化智能法律知识库",
+    "longDescription": "LawVault 是一款专为法律从业者设计的本地化、隐私安全的智能法律检索工具。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/Square30x30Logo.png",
+      "icons/Square44x44Logo.png",
+      "icons/Square71x71Logo.png",
+      "icons/Square89x89Logo.png",
+      "icons/Square107x107Logo.png",
+      "icons/Square142x142Logo.png",
+      "icons/Square150x150Logo.png",
+      "icons/Square284x284Logo.png",
+      "icons/Square310x310Logo.png",
+      "icons/StoreLogo.png"
+    ]
+  },
+  "plugins": {
+    "opener": {}
+  }
+}

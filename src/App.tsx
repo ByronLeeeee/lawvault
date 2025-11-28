@@ -1,0 +1,456 @@
+// frontend/src/App.tsx
+
+import { useState, useEffect, useRef, useMemo } from "react";
+import { SearchBar } from "./components/SearchBar";
+import { ResultsDisplay } from "./components/ResultsDisplay";
+import { FullTextModal } from "./components/FullTextModal";
+import { FavoritesSidebar } from "./components/FavoritesSidebar";
+import { SearchHistory } from "./components/SearchHistory";
+import { StatusBar } from "./components/StatusBar";
+import { ExportButton } from "./components/ExportButton";
+import toast, { Toaster } from "react-hot-toast";
+import { TitleBar } from "./components/TitleBar";
+import { SettingsModal } from "./components/SettingsModal";
+import {
+  searchLaw,
+  LawChunk,
+  LawNameSuggestion,
+  getSettings,
+  checkDbStatus,
+} from "./services/api";
+import { useLocalStorage } from "./hooks/useLocalStorage";
+import { AnimatePresence, motion } from "framer-motion";
+import { Settings, Star } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
+import { UpdateModal, GithubUpdate } from "./components/UpdateModal";
+
+function App() {
+  const [query, setQuery] = useState("");
+  const [executedQuery, setExecutedQuery] = useState("");
+  const [rawResults, setRawResults] = useState<LawChunk[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [density, setDensity] = useState<"comfortable" | "compact">(
+    "comfortable"
+  );
+  const [availableUpdate, setAvailableUpdate] = useState<GithubUpdate | null>(
+    null
+  );
+  const [isMissingDb, setIsMissingDb] = useState(false);
+  const [selectedLaw, setSelectedLaw] = useState<LawChunk | null>(null);
+  const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
+
+  const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
+  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [searchLocal, setSearchLocal] = useState(false);
+  const [regionQuery, setRegionQuery] = useState("");
+
+  const [searchHistory, setSearchHistory] = useLocalStorage<string[]>(
+    "searchHistory",
+    []
+  );
+  const [searchTime, setSearchTime] = useState<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const initApp = async () => {
+      try {
+        const settings = await getSettings();
+        if (settings.display_density) {
+          setDensity(settings.display_density);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      const dbReady = await checkDbStatus();
+
+      if (!dbReady) {
+        setIsMissingDb(true);
+        setIsSettingsOpen(true);
+        toast(
+          (_t) => (
+            <div className="flex flex-col gap-1">
+              <span className="font-bold text-base">👋 欢迎使用 LawVault</span>
+              <span className="text-xs">检测到数据库未配置。</span>
+              <span className="text-xs">
+                请在设置中选择您解压的 <b>数据文件夹</b> (包含 content.db)。
+              </span>
+            </div>
+          ),
+          {
+            duration: 8000,
+            icon: "📂",
+            style: { border: "1px solid #fbbf24" },
+          }
+        );
+      }
+    };
+    initApp();
+  }, []);
+
+  useEffect(() => {
+    getSettings()
+      .then((data) => {
+        if (data.display_density) {
+          setDensity(data.display_density);
+        }
+      })
+      .catch((err) => console.error("Failed to load settings:", err));
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        const currentVersion = await getVersion();
+
+        const response = await fetch(
+          "https://api.github.com/repos/byronleeeee/lawvault/releases/latest"
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const latestTag = data.tag_name;
+
+          const cleanLatest = latestTag.replace(/^v/, "");
+
+          if (cleanLatest !== currentVersion) {
+            setAvailableUpdate({
+              version: latestTag,
+              body: data.body || "",
+              html_url: data.html_url,
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Update check failed:", error);
+      }
+    };
+
+    const timer = setTimeout(checkForUpdates, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleSettingsClose = async () => {
+    if (isMissingDb) {
+      const ready = await checkDbStatus();
+
+      if (ready) {
+        setIsMissingDb(false);
+        setIsSettingsOpen(false);
+        toast.success("数据库配置成功，正在重载...", { duration: 3000 });
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } else {
+        toast.error(
+          "请先选择正确的数据库路径！\n(需包含 content.db 和 law_db.lancedb)",
+          {
+            duration: 4000,
+          }
+        );
+      }
+    } else {
+      setIsSettingsOpen(false);
+    }
+  };
+  const handleSearch = async (searchQuery: string) => {
+    if (!searchQuery.trim()) return;
+    setExecutedQuery(searchQuery);
+    const startTime = performance.now();
+
+    setIsLoading(true);
+    setError(null);
+    setHasSearched(true);
+
+    setSearchHistory((prev) =>
+      [searchQuery, ...prev.filter((item) => item !== searchQuery)].slice(0, 10)
+    );
+
+    try {
+      const regionParam = searchLocal ? regionQuery : undefined;
+
+      const response = await searchLaw(searchQuery, regionParam);
+
+      setRawResults(response.results);
+    } catch (err) {
+      setError("搜索失败，请检查向量服务器是否正常运行。");
+    } finally {
+      setIsLoading(false);
+      setSearchTime((performance.now() - startTime) / 1000);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: LawNameSuggestion) => {
+    const lawToView: LawChunk = {
+      law_name: suggestion.name,
+      source_file: `${suggestion.name}.txt`,
+      article_number: "全文",
+      category: suggestion.category,
+      region: suggestion.region,
+      content: "正在加载全文...",
+      publish_date: "",
+      part: "",
+      chapter: "",
+      _distance: 0,
+    };
+
+    setSelectedLaw(lawToView);
+  };
+
+  const executeHistorySearch = (historyQuery: string) => {
+    setQuery(historyQuery);
+    handleSearch(historyQuery);
+  };
+
+  const visibleCategories = useMemo(() => {
+    const categoriesInResults = new Set(rawResults.map((r) => r.category));
+    const baseCategories = ["法律", "司法解释", "行政法规"];
+    if (categoriesInResults.has("地方法规")) {
+      return [...baseCategories, "地方法规"];
+    }
+    return baseCategories;
+  }, [rawResults]);
+
+  const displayedResults = useMemo(() => {
+    let processedResults = [...rawResults];
+
+    if (filterCategories.length > 0) {
+      processedResults = processedResults.filter((result) =>
+        filterCategories.includes(result.category)
+      );
+    }
+
+    if (sortBy === "date") {
+      processedResults.sort((a, b) =>
+        (b.publish_date || "").localeCompare(a.publish_date || "")
+      );
+    }
+
+    return processedResults;
+  }, [rawResults, filterCategories, sortBy]);
+
+  useEffect(() => {
+    searchInputRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey && event.key === "k") ||
+        (event.key === "/" &&
+          !["INPUT", "TEXTAREA"].includes(
+            (event.target as HTMLElement).tagName
+          ))
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  return (
+    <div className="bg-base-100 min-h-screen font-sans relative flex flex-col overflow-hidden">
+      <TitleBar />
+      <Toaster position="top-center" reverseOrder={false} />
+
+      <div className="absolute top-0 left-0 right-0 h-96 bg-linear-to-b from-base-200 to-base-100 -z-10" />
+
+      <nav className="w-full max-w-6xl mx-auto px-4 py-6 mt-8 flex justify-between items-center">
+        <div className="flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity cursor-default">
+          <span className="text-sm font-bold tracking-wider uppercase text-base-content">
+            智能法条库
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary"
+            title="系统设置"
+          >
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">设置</span>
+          </button>
+
+          <button
+            onClick={() => setIsFavoritesOpen(true)}
+            className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary"
+          >
+            <Star className="h-4 w-4" />
+            <span className="hidden sm:inline">我的收藏</span>
+          </button>
+        </div>
+      </nav>
+
+      <main className="grow container max-w-4xl mx-auto px-4 pb-20">
+        <div
+          className={`transition-all duration-500 ease-in-out ${
+            hasSearched ? "mt-8 mb-8" : "mt-20 mb-12 text-center"
+          }`}
+        >
+          <h1
+            className={`font-extrabold text-base-content mb-2 transition-all duration-500 ${
+              hasSearched ? "text-2xl" : "text-4xl lg:text-6xl"
+            }`}
+          >
+            法律法规<span className="text-primary">·</span>智能搜
+          </h1>
+          {!hasSearched && (
+            <p className="text-lg text-base-content/60 mb-8 max-w-lg mx-auto">
+              基于语义理解的本地知识库，精准定位您需要的法律条文。
+            </p>
+          )}
+
+          <div className="relative z-20">
+            <SearchBar
+              ref={searchInputRef}
+              onSearch={handleSearch}
+              onSuggestionClick={handleSuggestionClick}
+              isLoading={isLoading}
+              query={query}
+              setQuery={setQuery}
+            />
+          </div>
+
+          {!hasSearched && searchHistory.length > 0 && (
+            <div className="mt-8 max-w-2xl mx-auto">
+              <SearchHistory
+                history={searchHistory}
+                onHistoryClick={executeHistorySearch}
+                onClearHistory={() => setSearchHistory([])}
+              />
+            </div>
+          )}
+        </div>
+
+        {hasSearched && !isLoading && rawResults.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="sticky top-4 z-10 mb-6"
+          >
+            <div className="navbar bg-base-100/80 backdrop-blur-md shadow-sm border border-base-200 rounded-box px-4 py-2 gap-4 flex-wrap md:flex-nowrap">
+              <div className="flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar mask-linear-fade">
+                <span className="text-xs font-bold text-base-content/50 uppercase tracking-wide mr-2 shrink-0">
+                  筛选
+                </span>
+                {visibleCategories.map((cat) => (
+                  <label key={cat} className="cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      className="peer hidden"
+                      checked={filterCategories.includes(cat)}
+                      onChange={() =>
+                        setFilterCategories((prev) =>
+                          prev.includes(cat)
+                            ? prev.filter((c) => c !== cat)
+                            : [...prev, cat]
+                        )
+                      }
+                    />
+                    <span className="badge badge-lg badge-outline bg-transparent border-base-300 text-base-content/70 peer-checked:badge-primary peer-checked:border-primary peer-checked:text-primary-content transition-all hover:bg-base-200">
+                      {cat}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="hidden md:block w-px h-6 bg-base-300 mx-2"></div>
+
+              <div className="flex items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-end">
+                <div className="join items-center">
+                  <label className="btn btn-sm btn-ghost join-item px-2 gap-2 font-normal">
+                    <input
+                      type="checkbox"
+                      checked={searchLocal}
+                      onChange={(e) => setSearchLocal(e.target.checked)}
+                      className="toggle toggle-xs toggle-primary"
+                    />
+                    <span className="text-sm">地方法规</span>
+                  </label>
+                  <AnimatePresence>
+                    {searchLocal && (
+                      <motion.div
+                        initial={{ opacity: 0, width: 0, paddingLeft: 0 }}
+                        animate={{ opacity: 1, width: 140, paddingLeft: 8 }}
+                        exit={{ opacity: 0, width: 0, paddingLeft: 0 }}
+                        className="overflow-hidden join-item bg-base-100"
+                      >
+                        <input
+                          type="text"
+                          value={regionQuery}
+                          onChange={(e) => setRegionQuery(e.target.value)}
+                          placeholder="输入地区..."
+                          className="input input-sm input-bordered w-full focus:outline-none text-xs"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as "relevance" | "date")
+                  }
+                  className="select select-sm select-ghost w-auto font-normal text-base-content/70"
+                >
+                  <option value="relevance">按相关度</option>
+                  <option value="date">按日期</option>
+                </select>
+
+                <ExportButton results={displayedResults} />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        <ResultsDisplay
+          results={displayedResults}
+          isLoading={isLoading}
+          error={error}
+          hasSearched={hasSearched}
+          query={executedQuery}
+          onViewFullText={setSelectedLaw}
+          density={density}
+        />
+      </main>
+
+      <AnimatePresence>
+        {isFavoritesOpen && (
+          <FavoritesSidebar
+            isOpen={isFavoritesOpen}
+            onClose={() => setIsFavoritesOpen(false)}
+            onViewFullText={(law) => {
+              setSelectedLaw(law);
+              setIsFavoritesOpen(false);
+            }}
+          />
+        )}
+        {selectedLaw && (
+          <FullTextModal
+            law={selectedLaw}
+            onClose={() => setSelectedLaw(null)}
+          />
+        )}
+      </AnimatePresence>
+      <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} />
+      {availableUpdate && (
+        <UpdateModal
+          update={availableUpdate}
+          onClose={() => setAvailableUpdate(null)}
+        />
+      )}
+      <StatusBar
+        isLoading={isLoading}
+        resultsCount={displayedResults.length}
+        searchTime={searchTime}
+      />
+    </div>
+  );
+}
+
+export default App;
