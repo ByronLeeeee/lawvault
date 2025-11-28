@@ -54,11 +54,18 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Install macOS Dependencies
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install protobuf
+
       - name: Install Linux Dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          # 注意：这里添加了 protobuf-compiler 和 libsoup-3.0-dev
+          # 同时将 webkit2gtk-4.0 升级为 4.1 (Tauri v2 推荐)
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev protobuf-compiler
 
       - name: Install Frontend Dependencies
         run: npm install
