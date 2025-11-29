@@ -5,136 +5,145 @@
 </p>
 
 <p align="center">
-  本地化、隐私优先的智能法律检索工具
+  <strong>本地化、隐私优先的智能法律检索工具</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/byronleeeee/lawvault/releases">
-    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/byronleeeee/lawvault">
+    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/byronleeeee/lawvault?style=flat-square&color=blue">
   </a>
   <a href="https://github.com/byronleeeee/lawvault/blob/main/LICENSE">
-    <img alt="GitHub License" src="https://img.shields.io/github/license/byronleeeee/lawvault">
+    <img alt="GitHub License" src="https://img.shields.io/github/license/byronleeeee/lawvault?style=flat-square">
   </a>
   <a href="https://github.com/byronleeeee/lawvault/issues">
-    <img alt="GitHub Issues" src="https://img.shields.io/github/issues/byronleeeee/lawvault">
+    <img alt="GitHub Issues" src="https://img.shields.io/github/issues/byronleeeee/lawvault?style=flat-square&color=orange">
   </a>
 </p>
 
 ## 📖 项目简介
 
-LawVault 是一款专为法律从业者设计的桌面应用程序，提供本地化、隐私安全的法律法规检索功能。通过语义搜索技术，用户可以快速准确地找到相关法律条款，并享受AI辅助分析功能。
+**LawVault** 是一款专为法律从业者设计的现代化桌面应用程序。它结合了传统的全文检索与先进的向量语义搜索技术，旨在提供**离线、快速、精准**的法律法规查询体验。
+
+与传统工具不同，LawVault 承诺**数据完全本地化**，您的搜索记录和使用习惯永远不会离开您的设备。
 
 ### 核心优势
 
-- 🔒 **隐私保护**: 所有数据均在本地处理，无联网上传
-- ⚡ **快速检索**: 基于向量数据库的语义搜索，精准匹配相关内容
-- 🤖 **AI辅助**: 集成大语言模型，提供智能问答和解释
-- 💼 **专业设计**: 面向法律专业人士的工作流程优化
-- 🖥️ **跨平台**: 支持Windows、macOS和Linux系统
+- 🔒 **隐私至上**: 零云端依赖，所有数据库和AI运算均在本地运行。
+- ⚡ **混合检索**: 融合关键词匹配与向量语义搜索，模糊记忆也能找到准确法条。
+- 🤖 **本地AI**: 提供基于检索增强生成 (RAG) 的智能法律问答。
+- 💼 **专业交互**: 专为律师设计，支持法条引用复制、收藏分组及全文阅读。
+- 🖥️ **全平台**: 完美支持 Windows、macOS 和 Linux。
+
+## ⚠️ 数据文件配置说明 (重要)
+
+由于法律数据库体积较大，**不包含在软件安装包中**。请在运行软件前，按照以下步骤准备数据：
+
+1.  **下载数据包**：请前往 [Releases 页面](https://github.com/byronleeeee/lawvault/releases) 下载最新的 `law_data.zip`。
+2.  **解压文件**：可以将该压缩包解压到您启动文件的同目录下，或电脑的任意位置（建议存放在非系统盘，例如 `D:\LawData` 或 `~/Documents/LawData`）。
+3.  **目录结构核对**：
+    解压后的文件夹内**必须**直接包含以下两个文件/文件夹，结构如下：
+    
+    如放在软件同目录下：
+    ```text
+    您的软件文件夹/
+    ├── lawvault.exe
+    └── resources/       # 压缩包默认带的文件夹
+        └── app_data/          # 压缩包默认带的文件夹
+            ├── content.db          # (文件) SQLite 法律条文数据库
+            └── law_db.lancedb/     # (文件夹) 向量索引数据库
+                ├── data/
+                └── ...
+    ```
+    如放在其他目录下：
+    ```text
+    您的数据文件夹/  <-- 请在软件设置中选择此文件夹
+    ├── content.db          # (文件) SQLite 法律条文数据库
+    └── law_db.lancedb/     # (文件夹) 向量索引数据库
+        ├── data/
+        └── ...
+    ```
+
+4.  **软件设置**：首次打开 LawVault，如没有放在软件目录下，则会自动弹出设置窗口（或点击右上角设置图标），在 **"高级设置"** -> **"数据库位置"** 中选择上述文件夹即可。
 
 ## ✨ 主要功能
 
 ### 🔍 智能语义搜索
-- 基于自然语言理解的法律条文检索
-- 支持模糊查询和关键词组合搜索
-- 相关度排序和多维度筛选
+- **自然语言理解**：直接输入 "试用期被辞退怎么赔偿"，而非仅搜索关键词。
+- **混合排序**：支持按相关度或发布日期排序。
+- **多维筛选**：支持按效力级别（法律、行政法规、司法解释、地方法规）筛选。
 
-### 📚 全文浏览
-- 查看完整法律文本
-- 章节导航和条文定位
-- 便捷的跳转引用功能
+### 📚 全文与引用
+- **沉浸式阅读**：支持查看完整法律文本，带有目录导航。
+- **智能高亮**：自动高亮搜索关键词。
+- **一键引用**：提供标准的法条引用格式复制，方便起草文书。
 
-### ⭐ 收藏管理
-- 创建个人收藏夹
-- 分类整理常用条文
-- 快速访问重要法规
+### ⭐ 收藏夹
+- 创建自定义收藏夹（如“合同纠纷常用”、“劳动法相关”）。
+- 拖拽式管理或右键快速操作。
 
-### 🤖 AI聊天助手
-- 基于检索内容的智能问答
-- 法律条文解释和案例分析
-- 上下文感知对话体验
-
-### 📤 导出功能
-- 搜索结果导出为多种格式
-- 支持PDF、Word等文档格式
-- 自定义导出模板
-
-## 🛠 技术架构
-
-### 前端技术栈
-- [React](https://reactjs.org/) v19 - 前端框架
-- [TypeScript](https://www.typescriptlang.org/) - 类型安全的JavaScript超集
-- [Tauri](https://tauri.studio/) v2 - 桌面应用框架
-- [Tailwind CSS](https://tailwindcss.com/) - UI样式框架
-- [Vite](https://vitejs.dev/) - 构建工具
-
-### 后端技术栈
-- [Rust](https://www.rust-lang.org/) - 高性能后端语言
-- [LanceDB](https://lancedb.com/) - 向量数据库
-- [SQLite](https://www.sqlite.org/) - 关系型数据库
-
+### 🤖 AI 法律助手
+- 配置本地 LLM (如 qwen, gemma) 进行对话。
+- 基于检索到的法条内容进行总结和解释，减少幻觉。
 
 ## 🚀 快速开始
 
-### 系统要求
-- Windows 10+/macOS 10.15+/Ubuntu 18.04+
-- 至少4GB内存
-- [Ollama](https://ollama.com/) (可选，用于AI功能)
+### 1. 安装应用
+从 [发布页面](https://github.com/byronleeeee/lawvault/releases) 下载适用于您系统的安装包：
+- **Windows**: 下载 `.exe` 安装包或绿色版。
+- **macOS**: 下载 `.dmg` 或 `.app`。
+- **Linux**: 下载 `.AppImage` 或 `.deb`。
 
-### 安装步骤
+### 2. 准备环境（推荐使用Ollama，其他平台请自行安装）
+1. 下载并安装 [Ollama](https://ollama.com/)。
+2. 拉取EmbeddingGemma 模型：
+   ```bash
+   ollama pull embeddinggemma:300m
+   ```
 
-#### 1. 下载安装包
-从[发布页面](https://github.com/byronleeeee/lawvault/releases)下载适用于您系统的安装包。
+**注意：仅支持未量化的FP32或量化的FP16模型，请勿使用Q8/Q4模型，否则会导致返回结果出错。**
 
-#### 2. 安装应用
-根据您的操作系统执行相应的安装步骤。
+3. 如希望使用AI问答功能，请拉取LLM模型（建议使用 Qwen3 或 Gemma3）：
+   ```bash
+   ollama pull qwen3
+   ```
+   然后在LawVault 设置中启用 AI 功能
 
-#### 3. 配置数据文件
-首次运行时需要指定包含法律数据库的文件夹，该文件夹应包含:
-- `content.db`: SQLite格式的法律条文数据库
-- `law_db.lancedb`: LanceDB格式的向量数据库
 
-#### 4. 配置AI模型（可选）
-如需使用AI功能，请确保已安装并运行Ollama服务，并在设置中配置相应参数。
+## 🛠 开发环境搭建
 
-### 开发环境搭建
+如果您是开发者并希望贡献代码：
 
 #### 前置条件
-- [Node.js](https://nodejs.org/) >= 18
-- [Rust](https://rustup.rs/)
-- [npm](https://www.npmjs.com/)
+- [Node.js](https://nodejs.org/) (v18+)
+- [Rust](https://rustup.rs/) (最新稳定版)
+- [pnpm](https://pnpm.io/) 或 npm
 
-#### 安装依赖
+#### 构建步骤
 ```bash
+# 1. 克隆项目
+git clone https://github.com/byronleeeee/lawvault.git
+
+# 2. 安装依赖
 npm install
-```
 
-#### 运行开发服务器
-```bash
+# 3. 运行开发模式 (前端+后端)
 npm run tauri dev
-```
 
-#### 构建应用
-```bash
+# 4. 打包构建
 npm run tauri build
 ```
 
 ## 📄 许可证
 
-本项目采用MIT许可证，详情请查看[LICENSE](./LICENSE)文件。
+本项目采用 **MIT 许可证**。这意味着您可以免费使用、修改和分发本项目，但在分发时必须保留原始的版权声明。详情请查看 [LICENSE](./LICENSE) 文件。
 
-## 👥 贡献者
+## 👥 贡献与联系
 
-欢迎提交Issue和Pull Request来改进本项目！
-
-特别感谢所有为LawVault做出贡献的开发者们。
-
-## 📞 联系方式
-
-如有任何问题或建议，请通过以下方式联系我们：
-- 提交[GitHub Issue](https://github.com/byronleeeee/lawvault/issues)
-- 发送邮件至: [liboyang@lslby.com]
+- **Bug 反馈**: 请提交 [GitHub Issue](https://github.com/byronleeeee/lawvault/issues)。
+- **邮件联系**: [liboyang@lslby.com]
 
 ---
 
-© 2025 李伯阳律师
+<p align="center">
+  Made with ❤️ by 李伯阳律师 | © 2025 LawVault
+</p>

@@ -26,6 +26,7 @@ import {
   checkAiConnection,
   selectFolder,
 } from "../services/api";
+import { getVersion } from "@tauri-apps/api/app";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -81,6 +82,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -511,7 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       智能法条库
                     </h2>
                     <p className="text-sm text-base-content/60 font-mono mt-1">
-                      LawVault v0.2.0
+                      LawVault v{appVersion}
                     </p>
                   </div>
                   <p className="text-base-content/80 leading-relaxed max-w-prose">
