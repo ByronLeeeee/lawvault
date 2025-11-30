@@ -77,6 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     chat_api_key: "ollama",
     chat_model: "gemma3",
     chat_top_k: 5,
+    max_agent_loops: 5,
   });
 
   const [activeTab, setActiveTab] = useState<TabKey>("general");
@@ -436,6 +437,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <label className="label">
                         <span className="label-text-alt text-base-content/50">
                           传递给 AI 的上下文数量，过多可能会导致幻觉。
+                        </span>
+                      </label>
+                    </div>
+                    <div className="form-control mt-4">
+                      <label className="label">
+                        <span className="label-text font-medium flex items-center gap-2">
+                          <Bot size={14} className="opacity-70" />
+                          智能体最大思考轮数
+                        </span>
+                        <span className="label-text-alt">
+                          {config.max_agent_loops <= 0
+                            ? "无上限"
+                            : `${config.max_agent_loops} 次`}
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          step="1"
+                          value={config.max_agent_loops}
+                          onChange={(e) =>
+                            setConfig({
+                              ...config,
+                              max_agent_loops: parseInt(e.target.value),
+                            })
+                          }
+                          className="range range-primary range-xs flex-1"
+                        />
+                        <div
+                          className="tooltip"
+                          data-tip="设置为 0 表示无上限（小心死循环）"
+                        >
+                          <input
+                            type="number"
+                            className="input input-bordered input-sm w-20 text-center"
+                            value={config.max_agent_loops}
+                            onChange={(e) =>
+                              setConfig({
+                                ...config,
+                                max_agent_loops: parseInt(e.target.value) || 0,
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <label className="label">
+                        <span className="label-text-alt text-base-content/50">
+                          允许 AI 自动修正计划并重新搜索的最大次数。推荐 3-5
+                          次。
                         </span>
                       </label>
                     </div>

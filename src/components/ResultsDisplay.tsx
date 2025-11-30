@@ -16,6 +16,7 @@ interface ResultsDisplayProps {
   query?: string;
   onViewFullText: (law: LawChunk) => void;
   density: "comfortable" | "compact";
+  isDeepThink?: boolean;
 }
 
 export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
@@ -26,6 +27,7 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
   query,
   onViewFullText,
   density = "comfortable",
+  isDeepThink = false,
 }) => {
   const renderContent = () => {
     if (isLoading) {
@@ -136,7 +138,11 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
         key={results.length}
       >
         {results.length > 0 && query && (
-          <AIChatBox query={query} results={results} />
+          <AIChatBox
+            query={query}
+            results={results}
+            mode={isDeepThink ? "deep" : "simple"}
+          />
         )}
         {results.map((result) => (
           <ResultCard

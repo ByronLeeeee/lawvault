@@ -631,7 +631,6 @@ export const FullTextModal: React.FC<FullTextModalProps> = ({
       "rounded-lg"
     );
 
-    // 2.5秒后移除
     setTimeout(() => {
       element.classList.remove(
         "bg-warning/10",

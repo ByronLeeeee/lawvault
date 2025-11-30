@@ -1,6 +1,7 @@
 // frontend/src/components/ResultCard.tsx
+
 import React from "react";
-import { FavoriteFolder, FavoriteItem, LawChunk } from "../services/api";
+import { LawChunk } from "../services/api";
 import { motion, Variants } from "framer-motion";
 import {
   Calendar,
@@ -11,8 +12,8 @@ import {
   Copy,
 } from "lucide-react";
 import { highlightText } from "../utils/highlight";
-import { useLocalStorage } from "../hooks/useLocalStorage";
 import { toast } from "react-hot-toast";
+import { useFavorites } from "../hooks/useFavorites"; // 引入新的 Hook
 
 interface ResultCardProps {
   law: LawChunk;
@@ -36,51 +37,28 @@ export const ResultCard: React.FC<ResultCardProps> = ({
   onViewFullText,
   density,
 }) => {
-  const [folders, setFolders] = useLocalStorage<FavoriteFolder[]>("favorites", [
-    { id: "default", name: "默认收藏夹", items: [] },
-  ]);
+  // 使用自定义 Hook 获取收藏状态和操作方法
+  const { isFavorite, add, remove } = useFavorites();
+  
+  // 检查当前条目是否已收藏 (依赖 law.id)
+  const favored = isFavorite(law.id);
 
-  const handleAddToFavorites = (folderId: string) => {
-    const newItem: FavoriteItem = {
-      ...law,
-      id: `${law.source_file}-${law.article_number}`,
-    };
-
-    let isDuplicate = false;
-
-    setFolders((currentFolders) => {
-      const safeFolders = Array.isArray(currentFolders) ? currentFolders : [];
-
-      const folder = safeFolders.find((f) => f.id === folderId);
-      if (folder && folder.items.some((i) => i.id === newItem.id)) {
-        isDuplicate = true;
-        return safeFolders;
-      }
-
-      return safeFolders.map((f) =>
-        f.id === folderId ? { ...f, items: [newItem, ...f.items] } : f
-      );
-    });
-
-    if (isDuplicate) {
-      toast.error("该条文已在此收藏夹中");
+  // 切换收藏状态
+  const handleToggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // 防止触发卡片点击
+    if (favored) {
+      await remove(law.id);
     } else {
-      toast.success("收藏成功！");
-    }
-
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
+      await add(law);
     }
   };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr || dateStr.length !== 8) return "N/A";
-    return `${dateStr.substring(0, 4)}-${dateStr.substring(
-      4,
-      6
-    )}-${dateStr.substring(6, 8)}`;
+    return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
   };
 
+  // 计算相关度显示分数
   const relevanceScore = Math.max(
     0,
     Math.min(100, Math.round((1 - law._distance / 2) * 100))
@@ -93,47 +71,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({
     toast.success("已复制引用格式");
   };
 
-  const renderFavoritesDropdown = () => (
-    <div className="dropdown dropdown-end dropdown-top">
-      <div
-        tabIndex={0}
-        role="button"
-        onClick={(e) => e.stopPropagation()}
-        className="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-yellow-500"
-      >
-        <Star size={14} /> <span className="hidden sm:inline">收藏</span>
-      </div>
-      <ul
-        tabIndex={0}
-        className="dropdown-content z-50 menu p-2 shadow-lg bg-base-100 rounded-box w-48 border border-base-200"
-      >
-        {folders.length > 0 ? (
-          folders.map((f) => (
-            <li key={f.id}>
-              <a
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToFavorites(f.id);
-                }}
-                className="flex justify-between"
-              >
-                <span className="truncate max-w-[120px]">{f.name}</span>
-                <span className="badge badge-xs badge-ghost">
-                  {f.items.length}
-                </span>
-              </a>
-            </li>
-          ))
-        ) : (
-          <li>
-            <a className="text-base-content/50 italic">暂无收藏夹</a>
-          </li>
-        )}
-      </ul>
-    </div>
-  );
-
-  // === 紧凑模式 ===
+  // === 紧凑模式 (Compact Mode) ===
   if (density === "compact") {
     return (
       <motion.div
@@ -174,22 +112,32 @@ export const ResultCard: React.FC<ResultCardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
+            {/* 收藏按钮 (紧凑模式) */}
             <button
-              className="btn btn-square btn-xs btn-ghost"
+              className={`btn btn-square btn-xs btn-ghost transition-colors ${
+                favored ? "text-yellow-500 hover:text-yellow-600" : "text-base-content/30 hover:text-yellow-500 opacity-0 group-hover:opacity-100"
+              }`}
+              onClick={handleToggleFavorite}
+              title={favored ? "取消收藏" : "加入收藏"}
+            >
+              <Star size={14} className={favored ? "fill-yellow-500" : ""} />
+            </button>
+
+            <button
+              className="btn btn-square btn-xs btn-ghost opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={copyCitation}
               title="复制引用"
             >
               <Copy size={14} />
             </button>
-            {renderFavoritesDropdown()}
           </div>
         </div>
       </motion.div>
     );
   }
 
-  // === 舒适模式 ===
+  // === 舒适模式 (Comfortable Mode) ===
   return (
     <motion.div
       className="card card-bordered bg-base-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out group"
@@ -250,10 +198,23 @@ export const ResultCard: React.FC<ResultCardProps> = ({
         </div>
 
         <div className="card-actions justify-end items-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {renderFavoritesDropdown()}
+          {/* 收藏按钮 (舒适模式) */}
+          <button
+            onClick={handleToggleFavorite}
+            className={`btn btn-xs btn-ghost gap-1 transition-all ${
+              favored 
+                ? "text-yellow-600 bg-yellow-50 hover:bg-yellow-100" 
+                : "text-base-content/60 hover:text-yellow-600"
+            }`}
+          >
+            <Star size={14} className={favored ? "fill-yellow-500 text-yellow-500" : ""} />
+            {favored ? "已收藏" : "收藏"}
+          </button>
+
           <button onClick={copyCitation} className="btn btn-xs btn-ghost gap-1">
             <Copy size={14} /> 引用
           </button>
+          
           <button
             onClick={() => onViewFullText(law)}
             className="btn btn-xs btn-primary ml-2"

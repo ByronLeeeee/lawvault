@@ -28,7 +28,6 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   return (
     <div className="modal modal-open z-60">
       {" "}
-      {/* z-index 要比 Sidebar 高 */}
       <div className="modal-backdrop" onClick={onCancel}></div>
       <div className="modal-box max-w-sm bg-base-100 shadow-2xl border border-base-200 p-6">
         <div className="flex flex-col items-center text-center gap-4">

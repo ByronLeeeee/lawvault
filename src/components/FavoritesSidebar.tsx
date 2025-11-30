@@ -1,99 +1,129 @@
-// frontend/src/components/FavoritesSidebar.tsx
-import React, { useState } from "react";
-import { FavoriteFolder, LawChunk } from "../services/api";
-import { useLocalStorage } from "../hooks/useLocalStorage";
-import { Folder, Star, Plus, Trash2, X, BookOpen } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import {
+  X,
+  BookOpen,
+  Trash2,
+  FolderOpen,
+  Plus,
+  Folder,
+  Star,
+  MoreVertical,
+} from "lucide-react";
 import { motion } from "framer-motion";
-import { toast } from "react-hot-toast";
+import { LawChunk, UserFavorite } from "../services/api";
+import { useFavorites } from "../hooks/useFavorites";
 import { ConfirmModal } from "./ConfirmModal";
 
 interface FavoritesSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onViewFullText: (item: LawChunk) => void;
+  onViewFullText: (law: LawChunk) => void;
 }
+
+const UNCLASSIFIED_ID = -1;
 
 export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
   isOpen,
   onClose,
   onViewFullText,
 }) => {
-  const [folders, setFolders] = useLocalStorage<FavoriteFolder[]>("favorites", [
-    { id: "default", name: "默认收藏夹", items: [] },
-  ]);
+  const { favorites, folders, remove, addFolder, removeFolder, move } =
+    useFavorites();
+
+  const [activeFolderId, setActiveFolderId] = useState<number>(UNCLASSIFIED_ID);
   const [newFolderName, setNewFolderName] = useState("");
-  const [activeFolderId, setActiveFolderId] = useState<string>("default");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
 
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
     type: "deleteFolder" | "deleteItem" | null;
-    targetId: string | null;
-    folderId?: string;
+    targetId: string | number | null;
+    title: string;
+    message: string;
   }>({
     isOpen: false,
     type: null,
     targetId: null,
+    title: "",
+    message: "",
   });
 
-  const addFolder = () => {
+  const convertToChunk = (fav: UserFavorite): LawChunk => ({
+    id: fav.law_id,
+    law_name: fav.law_name,
+    article_number: fav.article_number,
+    content: fav.content,
+    source_file: `${fav.law_name}.txt`,
+    category: "收藏",
+    region: "",
+    publish_date: "",
+    part: "",
+    chapter: "",
+    _distance: 0,
+  });
+
+  const activeFolderName = useMemo(() => {
+    if (activeFolderId === UNCLASSIFIED_ID) return "未分类";
+    const folder = folders.find((f) => f.id === activeFolderId);
+    return folder ? folder.name : "未知文件夹";
+  }, [activeFolderId, folders]);
+
+  const currentItems = useMemo(() => {
+    if (activeFolderId === UNCLASSIFIED_ID) {
+      return favorites.filter((f) => f.folder_id === null);
+    }
+    return favorites.filter((f) => f.folder_id === activeFolderId);
+  }, [activeFolderId, favorites]);
+
+  const handleCreateFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (newFolderName.trim()) {
-      const newFolder: FavoriteFolder = {
-        id: Date.now().toString(),
-        name: newFolderName.trim(),
-        items: [],
-      };
-      setFolders([...folders, newFolder]);
+      await addFolder(newFolderName);
       setNewFolderName("");
+      setIsCreatingFolder(false);
     }
   };
 
-  const requestDeleteFolder = (folderId: string) => {
-    if (folderId === "default") return;
+  const requestDeleteFolder = (folderId: number, folderName: string) => {
     setConfirmState({
       isOpen: true,
       type: "deleteFolder",
       targetId: folderId,
+      title: "删除文件夹",
+      message: `确定要删除文件夹 "${folderName}" 吗？\n警告！文件夹内的条目会被全部删除！`,
     });
   };
 
-  const requestDeleteItem = (itemId: string, folderId: string) => {
+  const requestDeleteItem = (lawId: string) => {
     setConfirmState({
       isOpen: true,
       type: "deleteItem",
-      targetId: itemId,
-      folderId: folderId,
+      targetId: lawId,
+      title: "移除收藏",
+      message: "确定要移除这条收藏吗？",
     });
   };
 
-  const handleConfirmDelete = () => {
-    const { type, targetId, folderId } = confirmState;
+  const handleConfirm = async () => {
+    const { type, targetId } = confirmState;
 
-    if (type === "deleteFolder" && targetId) {
-      setFolders(folders.filter((f) => f.id !== targetId));
-      toast.success("文件夹已删除");
+    if (type === "deleteFolder" && typeof targetId === "number") {
+      await removeFolder(targetId);
       if (activeFolderId === targetId) {
-        setActiveFolderId("default");
+        setActiveFolderId(UNCLASSIFIED_ID);
       }
-    } else if (type === "deleteItem" && targetId && folderId) {
-      setFolders(
-        folders.map((folder) => {
-          if (folder.id === folderId) {
-            return {
-              ...folder,
-              items: folder.items.filter((item) => item.id !== targetId),
-            };
-          }
-          return folder;
-        })
-      );
-      toast.success("已移除收藏");
+    } else if (type === "deleteItem" && typeof targetId === "string") {
+      await remove(targetId);
     }
 
-    setConfirmState({ isOpen: false, type: null, targetId: null });
+    setConfirmState({
+      isOpen: false,
+      type: null,
+      targetId: null,
+      title: "",
+      message: "",
+    });
   };
-
-  const activeFolder =
-    folders.find((f) => f.id === activeFolderId) || folders[0];
 
   if (!isOpen) return null;
 
@@ -111,19 +141,20 @@ export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
         />
 
         <motion.div
-          className="fixed top-10 right-0 h-[calc(100%-2.5rem)] w-full md:w-[800px] max-w-full bg-base-100 shadow-2xl flex flex-col"
+          className="fixed top-10 right-0 h-[calc(100vh-2.5rem)] w-full md:w-[800px] max-w-full bg-base-100 shadow-2xl flex flex-col border-l border-base-200"
           initial={{ x: "100%" }}
           animate={{ x: 0 }}
           exit={{ x: "100%" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
-          <header className="flex items-center justify-between p-5 border-b border-base-200 bg-base-100 shrink-0 z-10">
+          {/* Header */}
+          <header className="flex items-center justify-between p-4 border-b border-base-200 bg-base-100 shrink-0 z-10">
             <div className="flex items-center gap-3">
               <div className="bg-yellow-100 p-2 rounded-full">
                 <Star className="text-yellow-600 fill-yellow-600 h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-base-content">
+                <h2 className="text-lg font-bold text-base-content">
                   我的收藏
                 </h2>
                 <p className="text-xs text-base-content/50">
@@ -139,71 +170,118 @@ export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
             </button>
           </header>
 
+          {/* Body: Two Columns */}
           <div className="flex grow overflow-hidden">
-            <nav className="w-1/3 min-w-[220px] bg-base-200/50 p-3 overflow-y-auto border-r border-base-200 flex flex-col">
-              <div className="join w-full mb-4 shadow-sm">
-                <input
-                  type="text"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="新建文件夹..."
-                  className="input input-sm input-bordered join-item w-full focus:outline-none bg-base-100"
-                />
-                <button
-                  onClick={addFolder}
-                  className="btn btn-sm join-item btn-neutral"
-                >
-                  <Plus size={16} />
-                </button>
+            {/* Left Column: Folders */}
+            <nav className="w-1/3 min-w-[200px] bg-base-200/50 p-3 overflow-y-auto border-r border-base-200 flex flex-col">
+              {/* Add Folder Input */}
+              <div className="mb-4">
+                {!isCreatingFolder ? (
+                  <button
+                    onClick={() => setIsCreatingFolder(true)}
+                    className="btn btn-sm btn-outline w-full gap-2 border-dashed border-base-content/20 font-normal hover:bg-base-100"
+                  >
+                    <Plus size={16} /> 新建文件夹
+                  </button>
+                ) : (
+                  <form
+                    onSubmit={handleCreateFolder}
+                    className="join w-full shadow-sm"
+                  >
+                    <input
+                      autoFocus
+                      type="text"
+                      className="input input-sm input-bordered join-item w-full min-w-0"
+                      placeholder="名称..."
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onBlur={() =>
+                        !newFolderName && setIsCreatingFolder(false)
+                      }
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-sm btn-primary join-item"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </form>
+                )}
               </div>
 
-              <ul className="menu w-full p-0 gap-1">
+              {/* Folder List */}
+              <ul className="menu w-full p-0 gap-1 text-sm">
+                {/* 1. Unclassified */}
+                <li>
+                  <a
+                    className={`flex justify-between items-center py-2.5 px-3 rounded-lg ${
+                      activeFolderId === UNCLASSIFIED_ID
+                        ? "active font-bold"
+                        : ""
+                    }`}
+                    onClick={() => setActiveFolderId(UNCLASSIFIED_ID)}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <FolderOpen
+                        size={16}
+                        className={
+                          activeFolderId === UNCLASSIFIED_ID
+                            ? ""
+                            : "text-base-content/50"
+                        }
+                      />
+                      <span>未分类</span>
+                    </div>
+                    <span className="badge badge-sm badge-ghost">
+                      {favorites.filter((f) => f.folder_id === null).length}
+                    </span>
+                  </a>
+                </li>
+
+                <div className="divider my-1 h-px"></div>
+
+                {/* 2. User Folders */}
                 {folders.map((folder) => (
                   <li key={folder.id} className="group relative">
                     <a
-                      className={`flex justify-between items-center py-3 px-4 rounded-lg transition-all ${
-                        activeFolderId === folder.id
-                          ? "active bg-neutral text-neutral-content shadow-md"
-                          : "hover:bg-base-200 bg-transparent"
+                      className={`flex justify-between items-center py-2.5 px-3 rounded-lg ${
+                        activeFolderId === folder.id ? "active font-bold" : ""
                       }`}
                       onClick={() => setActiveFolderId(folder.id)}
                     >
-                      <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="flex items-center gap-2 truncate max-w-[120px]">
                         <Folder
-                          size={18}
+                          size={16}
                           className={
                             activeFolderId === folder.id
-                              ? "fill-neutral-content/20"
+                              ? ""
                               : "text-base-content/50"
                           }
                         />
-                        <span className="truncate font-medium">
-                          {folder.name}
-                        </span>
+                        <span className="truncate">{folder.name}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span
-                          className={`badge badge-sm border-none ${
-                            activeFolderId === folder.id
-                              ? "bg-white/20 text-white"
-                              : "bg-base-300 text-base-content/70"
-                          }`}
-                        >
-                          {folder.items.length}
+                        <span className="badge badge-sm badge-ghost">
+                          {
+                            favorites.filter((f) => f.folder_id === folder.id)
+                              .length
+                          }
                         </span>
-                        {folder.id !== "default" && (
-                          <div
-                            role="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              requestDeleteFolder(folder.id);
-                            }}
-                            className="ml-1 p-1 rounded hover:bg-red-500 hover:text-white text-base-content/40 transition-colors opacity-0 group-hover:opacity-100"
-                            title="删除文件夹"
-                          >
-                            <Trash2 size={14} />
-                          </div>
-                        )}
+                        <div
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            requestDeleteFolder(folder.id, folder.name);
+                          }}
+                          className={`p-1 rounded hover:bg-error hover:text-white transition-colors ${
+                            activeFolderId === folder.id
+                              ? "text-primary-content/70"
+                              : "text-base-content/30 opacity-0 group-hover:opacity-100"
+                          }`}
+                          title="删除文件夹"
+                        >
+                          <Trash2 size={14} />
+                        </div>
                       </div>
                     </a>
                   </li>
@@ -211,55 +289,97 @@ export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
               </ul>
             </nav>
 
-            <main className="w-2/3 p-4 md:p-6 overflow-y-auto bg-base-100">
-              <div className="flex items-center justify-between mb-6">
+            {/* Right Column: Items */}
+            <main className="w-2/3 p-4 md:p-6 overflow-y-auto bg-base-100 relative">
+              <div className="flex items-center justify-between mb-6 sticky top-0 bg-base-100/95 backdrop-blur z-10 py-2 border-b border-transparent">
                 <h3 className="font-bold text-xl flex items-center gap-2">
-                  <Folder className="text-base-content/30" size={24} />
-                  {activeFolder.name}
+                  {activeFolderId === UNCLASSIFIED_ID ? (
+                    <FolderOpen className="text-base-content/30" />
+                  ) : (
+                    <Folder className="text-primary" />
+                  )}
+                  {activeFolderName}
                 </h3>
                 <span className="text-xs text-base-content/50">
-                  共 {activeFolder.items.length} 条记录
+                  {currentItems.length} 条记录
                 </span>
               </div>
 
-              {activeFolder.items.length > 0 ? (
+              {currentItems.length > 0 ? (
                 <div className="grid gap-4">
-                  {activeFolder.items.map((item) => (
+                  {currentItems.map((item) => (
                     <div
                       key={item.id}
-                      className="card card-compact card-bordered bg-base-100 shadow-sm hover:shadow-md hover:border-neutral/20 transition-all duration-200 group"
+                      className="card card-compact card-bordered bg-base-100 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200 group"
                     >
                       <div className="card-body">
                         <div className="flex justify-between items-start gap-3">
                           <div className="grow">
-                            <h4 className="font-bold text-base text-base-content mb-1 flex items-center gap-2">
-                              {item.law_name}
-                              <span className="badge badge-ghost badge-sm font-normal">
+                            <h4 className="font-bold text-base text-base-content mb-1">
+                              {item.law_name}{" "}
+                              <span className="font-normal text-base-content/70 text-sm ml-1">
                                 {item.article_number}
                               </span>
                             </h4>
-                            <p className="text-sm text-base-content/70 line-clamp-2 leading-relaxed">
+                            <p className="text-xs text-base-content/60 line-clamp-2 leading-relaxed font-mono">
                               {item.content}
                             </p>
                           </div>
+
+                          {/* Item Actions Dropdown */}
+                          <div className="dropdown dropdown-end">
+                            <div
+                              tabIndex={0}
+                              role="button"
+                              className="btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <MoreVertical size={16} />
+                            </div>
+                            <ul
+                              tabIndex={0}
+                              className="dropdown-content z-20 menu p-2 shadow-lg bg-base-100 rounded-box w-40 border border-base-200 text-xs"
+                            >
+                              <li className="menu-title px-2 py-1 text-xs opacity-50">
+                                移动到...
+                              </li>
+                              <li>
+                                <a onClick={() => move(item.law_id, null)}>
+                                  未分类
+                                </a>
+                              </li>
+                              {folders.map(
+                                (f) =>
+                                  f.id !== activeFolderId && (
+                                    <li key={f.id}>
+                                      <a
+                                        onClick={() => move(item.law_id, f.id)}
+                                      >
+                                        {f.name}
+                                      </a>
+                                    </li>
+                                  )
+                              )}
+                              <div className="divider my-1"></div>
+                              <li>
+                                <a
+                                  className="text-error"
+                                  onClick={() => requestDeleteItem(item.law_id)}
+                                >
+                                  删除
+                                </a>
+                              </li>
+                            </ul>
+                          </div>
                         </div>
-                        <div className="card-actions justify-end mt-2 pt-2 border-t border-base-100 opacity-60 group-hover:opacity-100 transition-opacity">
+
+                        <div className="card-actions justify-end mt-2 pt-2 border-t border-base-100/50">
                           <button
                             onClick={() => {
-                              onViewFullText(item);
-                              onClose();
+                              onViewFullText(convertToChunk(item));
                             }}
-                            className="btn btn-xs btn-ghost gap-1 hover:bg-primary/10 hover:text-primary"
+                            className="btn btn-xs btn-ghost gap-1 text-primary hover:bg-primary/10"
                           >
                             <BookOpen size={14} /> 查看全文
-                          </button>
-                          <button
-                            onClick={() =>
-                              requestDeleteItem(item.id, activeFolder.id)
-                            }
-                            className="btn btn-xs btn-ghost text-error hover:bg-error/10"
-                          >
-                            <Trash2 size={14} /> 移除
                           </button>
                         </div>
                       </div>
@@ -267,12 +387,14 @@ export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-64 text-base-content/30">
-                  <div className="w-20 h-20 bg-base-200 rounded-full flex items-center justify-center mb-4">
-                    <Folder size={40} />
+                <div className="flex flex-col items-center justify-center h-64 text-base-content/30 select-none">
+                  <div className="w-16 h-16 bg-base-200 rounded-full flex items-center justify-center mb-4">
+                    <FolderOpen size={32} />
                   </div>
-                  <p className="text-lg font-medium">这个文件夹是空的</p>
-                  <p className="text-sm mt-1">去搜索一些法律条文添加进来吧</p>
+                  <p className="text-sm font-medium">空空如也</p>
+                  <p className="text-xs mt-1 opacity-70">
+                    去搜索法条添加进来吧
+                  </p>
                 </div>
               )}
             </main>
@@ -280,19 +402,16 @@ export const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
         </motion.div>
       </motion.div>
 
+      {/* 自定义确认弹窗 - 放在最外层 */}
       <ConfirmModal
         isOpen={confirmState.isOpen}
-        title={confirmState.type === "deleteFolder" ? "删除文件夹" : "移除条文"}
-        message={
-          confirmState.type === "deleteFolder"
-            ? "确定要删除这个文件夹及其所有内容吗？此操作无法撤销。"
-            : "确定要从收藏夹中移除此条文吗？"
-        }
+        title={confirmState.title}
+        message={confirmState.message}
         confirmText="确定删除"
-        onConfirm={handleConfirmDelete}
-        onCancel={() =>
-          setConfirmState({ isOpen: false, type: null, targetId: null })
-        }
+        cancelText="取消"
+        type="danger"
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
       />
     </>
   );

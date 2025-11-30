@@ -18,11 +18,15 @@ import {
   getSettings,
   checkDbStatus,
 } from "./services/api";
-import { useLocalStorage } from "./hooks/useLocalStorage";
 import { AnimatePresence, motion } from "framer-motion";
 import { Settings, Star } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { UpdateModal, GithubUpdate } from "./components/UpdateModal";
+import { startAgentSearch, AgentUpdateEvent } from "./services/api";
+import { AgentView } from "./components/AgentView";
+import { listen } from "@tauri-apps/api/event";
+import { Sparkles } from "lucide-react";
+import { useHistory } from "./hooks/useHistory";
 
 function App() {
   const [query, setQuery] = useState("");
@@ -47,12 +51,25 @@ function App() {
   const [searchLocal, setSearchLocal] = useState(false);
   const [regionQuery, setRegionQuery] = useState("");
 
-  const [searchHistory, setSearchHistory] = useLocalStorage<string[]>(
-    "searchHistory",
-    []
-  );
-  const [searchTime, setSearchTime] = useState<number | null>(null);
+  const [searchTime] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isDeepThink, setIsDeepThink] = useState(false);
+  const [agentEvent, setAgentEvent] = useState<AgentUpdateEvent | null>(null);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const {
+    history: searchHistory,
+    add: addToHistory,
+    clear: clearHistory,
+  } = useHistory();
+
+  useEffect(() => {
+    const unlisten = listen<AgentUpdateEvent>("agent-update", (e) => {
+      setAgentEvent(e.payload);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   useEffect(() => {
     const initApp = async () => {
@@ -159,32 +176,37 @@ function App() {
   const handleSearch = async (searchQuery: string) => {
     if (!searchQuery.trim()) return;
     setExecutedQuery(searchQuery);
-    const startTime = performance.now();
-
     setIsLoading(true);
     setError(null);
     setHasSearched(true);
-
-    setSearchHistory((prev) =>
-      [searchQuery, ...prev.filter((item) => item !== searchQuery)].slice(0, 10)
-    );
+    setAgentEvent(null);
+    setRawResults([]);
+    addToHistory(searchQuery);
 
     try {
-      const regionParam = searchLocal ? regionQuery : undefined;
-
-      const response = await searchLaw(searchQuery, regionParam);
-
-      setRawResults(response.results);
+      if (isDeepThink) {
+        // === Agent 模式 ===
+        setIsAgentRunning(true);
+        const agentResults = await startAgentSearch(searchQuery);
+        setRawResults(agentResults);
+      } else {
+        // === 普通模式 ===
+        const regionParam = searchLocal ? regionQuery : undefined;
+        const response = await searchLaw(searchQuery, regionParam);
+        setRawResults(response.results);
+      }
     } catch (err) {
-      setError("搜索失败，请检查向量服务器是否正常运行。");
+      setError("搜索失败，请检查服务日志。");
+      console.error(err);
     } finally {
       setIsLoading(false);
-      setSearchTime((performance.now() - startTime) / 1000);
+      setIsAgentRunning(false);
     }
   };
 
   const handleSuggestionClick = (suggestion: LawNameSuggestion) => {
     const lawToView: LawChunk = {
+      id: `${suggestion.name}-full-text`, 
       law_name: suggestion.name,
       source_file: `${suggestion.name}.txt`,
       article_number: "全文",
@@ -200,10 +222,6 @@ function App() {
     setSelectedLaw(lawToView);
   };
 
-  const executeHistorySearch = (historyQuery: string) => {
-    setQuery(historyQuery);
-    handleSearch(historyQuery);
-  };
 
   const visibleCategories = useMemo(() => {
     const categoriesInResults = new Set(rawResults.map((r) => r.category));
@@ -313,14 +331,38 @@ function App() {
               query={query}
               setQuery={setQuery}
             />
+            <div className="flex justify-center mt-3">
+              <label className="label cursor-pointer justify-start gap-2 bg-base-100/50 px-3 py-1 rounded-full border border-base-200 shadow-sm backdrop-blur-md">
+                <span
+                  className={`label-text flex items-center gap-1 text-xs font-bold transition-colors ${
+                    isDeepThink ? "text-primary" : "text-base-content/60"
+                  }`}
+                >
+                  <Sparkles
+                    size={14}
+                    className={isDeepThink ? "fill-primary" : ""}
+                  />
+                  深度思考模式 (Agent)
+                </span>
+                <input
+                  type="checkbox"
+                  className="toggle toggle-xs toggle-primary"
+                  checked={isDeepThink}
+                  onChange={(e) => setIsDeepThink(e.target.checked)}
+                />
+              </label>
+            </div>
           </div>
 
           {!hasSearched && searchHistory.length > 0 && (
             <div className="mt-8 max-w-2xl mx-auto">
               <SearchHistory
                 history={searchHistory}
-                onHistoryClick={executeHistorySearch}
-                onClearHistory={() => setSearchHistory([])}
+                onHistoryClick={(q) => {
+                  setQuery(q);
+                  handleSearch(q);
+                }}
+                onClearHistory={clearHistory}
               />
             </div>
           )}
@@ -408,6 +450,12 @@ function App() {
           </motion.div>
         )}
 
+        {hasSearched && isDeepThink && (
+          <div className="max-w-4xl mx-auto mt-8 px-4">
+            <AgentView event={agentEvent} isProcessing={isAgentRunning} />
+          </div>
+        )}
+
         <ResultsDisplay
           results={displayedResults}
           isLoading={isLoading}
@@ -416,6 +464,7 @@ function App() {
           query={executedQuery}
           onViewFullText={setSelectedLaw}
           density={density}
+          isDeepThink={isDeepThink}
         />
       </main>
 

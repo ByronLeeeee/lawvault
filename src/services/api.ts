@@ -1,8 +1,10 @@
+// src/services/api.ts
+
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
 
 export interface LawChunk {
+  id: string;
   content: string;
   law_name: string;
   category: string;
@@ -34,14 +36,34 @@ export interface LawNameSearchResponse {
   results: LawNameSuggestion[];
 }
 
-export interface FavoriteItem extends LawChunk {
-  id: string;
+// User Data: 收藏夹
+export interface UserFavorite {
+  id: number;
+  law_id: string;
+  law_name: string;
+  article_number: string;
+  content: string;
+  created_at: string;
+  tags?: string;
+  folder_id?: number | null;
 }
 
-export interface FavoriteFolder {
-  id: string;
+export interface UserFolder {
+  id: number;
   name: string;
-  items: FavoriteItem[];
+  created_at: string;
+}
+
+// Agent: 更新事件
+export interface AgentUpdateEvent {
+  step_type: "planning" | "executing" | "thinking" | "finished" | "error";
+  todo_list: string[];
+  completed_log: {
+    task: string;
+    thought: string;
+  }[];
+  current_task?: string;
+  thought?: string;
 }
 
 export interface AppSettings {
@@ -58,11 +80,15 @@ export interface AppSettings {
   chat_api_key: string;
   chat_model: string;
   chat_top_k: number;
+  
+  max_agent_loops: number;
 }
+
+// --- 核心搜索 ---
 
 export async function searchLaw(
   query: string,
-  filterRegion?: string // 新增可选参数
+  filterRegion?: string
 ): Promise<{ results: LawChunk[] }> {
   try {
     const results = await invoke<LawChunk[]>("search_law", {
@@ -92,38 +118,28 @@ export async function searchLawByName(
   }
 }
 
-export async function getFullText(
-  source_file: string
-): Promise<FullTextResponse> {
+// --- AI 与 Agent ---
+
+export async function startAgentSearch(query: string): Promise<LawChunk[]> {
   try {
-    const content = await invoke<string>("get_full_text", {
-      sourceFile: source_file,
-    });
-    return { source_file, content };
+    return await invoke<LawChunk[]>("start_agent_search", { query });
   } catch (error) {
-    console.error("Get full text failed:", error);
+    console.error("Agent search failed:", error);
     throw error;
   }
-}
-
-export async function getSettings(): Promise<AppSettings> {
-  return await invoke<AppSettings>("get_settings");
-}
-
-export async function saveSettings(settings: any) {
-  return await invoke("save_settings", { newSettings: settings });
 }
 
 export async function startChatStream(
   query: string,
   contextChunks: string[],
+  mode: "simple" | "deep",
   onToken: (token: string) => void
 ) {
   const unlisten = await listen<string>("chat-token", (event) => {
     onToken(event.payload);
   });
 
-  invoke("chat_stream", { query, contextChunks }).catch((err) => {
+  invoke("chat_stream", { query, contextChunks, mode }).catch((err) => {
     onToken(`[Error: ${err}]`);
   });
 
@@ -147,18 +163,74 @@ export async function checkAiConnection(
   }
 }
 
-export async function selectFolder(): Promise<string | null> {
+// --- User Data (收藏与历史) ---
+
+export async function getFavorites(): Promise<UserFavorite[]> {
+  return await invoke("get_favorites");
+}
+
+export async function createFolder(name: string): Promise<void> {
+  return await invoke("create_folder", { name });
+}
+
+export async function getFolders(): Promise<UserFolder[]> {
+  return await invoke("get_folders");
+}
+
+export async function deleteFolder(folderId: number): Promise<void> {
+  return await invoke("delete_folder", { folderId });
+}
+
+export async function addFavorite(chunk: LawChunk, folderId?: number | null): Promise<void> {
+  return await invoke("add_favorite", { chunk, folderId: folderId || null });
+}
+
+export async function moveFavorite(lawId: string, folderId: number | null): Promise<void> {
+  return await invoke("move_favorite", { lawId, folderId });
+}
+
+export async function removeFavorite(lawId: string): Promise<void> {
+  return await invoke("remove_favorite", { lawId });
+}
+
+export async function checkIsFavorite(lawId: string): Promise<boolean> {
+  return await invoke("check_is_favorite", { lawId });
+}
+
+export async function addHistory(query: string): Promise<void> {
+  return await invoke("add_history", { query });
+}
+
+export async function getHistory(): Promise<string[]> {
+  return await invoke("get_history");
+}
+
+export async function clearHistory(): Promise<void> {
+  return await invoke("clear_history");
+}
+
+// --- 系统与配置 ---
+
+export async function getFullText(
+  source_file: string
+): Promise<FullTextResponse> {
   try {
-    const selected = await open({
-      directory: true, // 只选文件夹
-      multiple: false,
-      title: "选择数据库所在的文件夹 (包含 content.db 和 law_db 文件夹)",
+    const content = await invoke<string>("get_full_text", {
+      sourceFile: source_file,
     });
-    return selected as string | null;
-  } catch (e) {
-    console.error("Select folder failed", e);
-    return null;
+    return { source_file, content };
+  } catch (error) {
+    console.error("Get full text failed:", error);
+    throw error;
   }
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  return await invoke<AppSettings>("get_settings");
+}
+
+export async function saveSettings(settings: any) {
+  return await invoke("save_settings", { newSettings: settings });
 }
 
 export async function getArticleSnippet(
@@ -183,5 +255,21 @@ export async function checkDbStatus(): Promise<boolean> {
   } catch (e) {
     console.error("Failed to check db status", e);
     return false;
+  }
+}
+
+// 文件夹选择器 (仅用于设置中更改数据路径)
+import { open } from "@tauri-apps/plugin-dialog";
+export async function selectFolder(): Promise<string | null> {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "选择数据库所在的文件夹",
+    });
+    return selected as string | null;
+  } catch (e) {
+    console.error("Select folder failed", e);
+    return null;
   }
 }
