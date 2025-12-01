@@ -38,7 +38,11 @@
 
 由于法律数据库体积较大，**不包含在软件安装包中**。请在运行软件前，按照以下步骤准备数据：
 
-1.  **下载数据包**：请前往 [Releases 页面](https://github.com/byronleeeee/lawvault/releases) 下载最新的 `law_data.zip`。
+1.  **下载数据包**：请通过以下链接下载最新的 `LawVault-DBs.zip`。
+```text
+链接：https://pan.xunlei.com/s/VOfNGS52Y_8sFa1U7Xx4j86nA1#
+提取码：bebr
+```
 2.  **解压文件**：可以将该压缩包解压到您启动文件的同目录下，或电脑的任意位置（建议存放在非系统盘，例如 `D:\LawData` 或 `~/Documents/LawData`）。
 3.  **目录结构核对**：
     解压后的文件夹内**必须**直接包含以下两个文件/文件夹，结构如下：
