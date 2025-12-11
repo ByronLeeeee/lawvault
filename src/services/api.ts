@@ -80,7 +80,7 @@ export interface AppSettings {
   chat_api_key: string;
   chat_model: string;
   chat_top_k: number;
-  
+
   max_agent_loops: number;
 }
 
@@ -135,13 +135,19 @@ export async function startChatStream(
   mode: "simple" | "deep",
   onToken: (token: string) => void
 ) {
-  const unlisten = await listen<string>("chat-token", (event) => {
+  const eventId = `chat-token-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2, 9)}`;
+
+  const unlisten = await listen<string>(eventId, (event) => {
     onToken(event.payload);
   });
 
-  invoke("chat_stream", { query, contextChunks, mode }).catch((err) => {
-    onToken(`[Error: ${err}]`);
-  });
+  invoke("chat_stream", { query, contextChunks, mode, eventId }).catch(
+    (err) => {
+      onToken(`[Error: ${err}]`);
+    }
+  );
 
   return unlisten;
 }
@@ -181,11 +187,17 @@ export async function deleteFolder(folderId: number): Promise<void> {
   return await invoke("delete_folder", { folderId });
 }
 
-export async function addFavorite(chunk: LawChunk, folderId?: number | null): Promise<void> {
+export async function addFavorite(
+  chunk: LawChunk,
+  folderId?: number | null
+): Promise<void> {
   return await invoke("add_favorite", { chunk, folderId: folderId || null });
 }
 
-export async function moveFavorite(lawId: string, folderId: number | null): Promise<void> {
+export async function moveFavorite(
+  lawId: string,
+  folderId: number | null
+): Promise<void> {
   return await invoke("move_favorite", { lawId, folderId });
 }
 
