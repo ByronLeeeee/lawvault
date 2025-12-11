@@ -908,6 +908,7 @@ async fn chat_stream(
     query: String,
     context_chunks: Vec<String>,
     mode: String,
+    event_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let settings = state.settings.lock().unwrap().clone();
@@ -1031,9 +1032,9 @@ async fn chat_stream(
                         }
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
                             if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
-                                let _ = app.emit("chat-token", content);
+                                let _ = app.emit(&event_id, content);
                             } else if let Some(content) = json["message"]["content"].as_str() {
-                                let _ = app.emit("chat-token", content);
+                                let _ = app.emit(&event_id, content);
                             }
                         }
                     }
