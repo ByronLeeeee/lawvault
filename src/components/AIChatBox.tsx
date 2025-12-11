@@ -30,6 +30,7 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
     if (!isEnabled || !query || results.length === 0) return;
 
     let unlisten: (() => void) | undefined;
+    let isActive = true;
 
     const start = async () => {
       setAnswer("");
@@ -63,6 +64,7 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
     start();
 
     return () => {
+      isActive = false; 
       if (unlisten) unlisten();
       setIsStreaming(false);
     };
