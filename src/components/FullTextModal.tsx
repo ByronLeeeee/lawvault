@@ -202,9 +202,10 @@ export const FullTextModal: React.FC<FullTextModalProps> = ({
       content: "正在查找条文...",
     }));
 
-    // 如果正则没捕获到法名，或者法名包含"本法"，则视为当前法律
+    // 如果正则没捕获到法名，或者法名包含特定的自我引用表述，则视为当前法律
+    const SELF_REFERENCE_PATTERNS = /^(本法|本实施条例|本办法|本规定|本条例|本细则|本规则|本办法实施细则)$/;
     let targetLaw = null;
-    if (lawNameRef && !lawNameRef.includes("本法")) {
+    if (lawNameRef && !SELF_REFERENCE_PATTERNS.test(lawNameRef)) {
       targetLaw = lawNameRef;
     }
 
@@ -230,6 +231,7 @@ export const FullTextModal: React.FC<FullTextModalProps> = ({
       "照",
       "执行",
       "于",
+      "实施",
       "履行", // 动词
       "的",
       "在",
@@ -238,6 +240,7 @@ export const FullTextModal: React.FC<FullTextModalProps> = ({
       "及",
       "向",
       "对",
+      "为",
       "是", // 介词/连词
     ];
 
