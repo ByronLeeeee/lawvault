@@ -80,7 +80,7 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
             <h1 className="text-xl font-bold text-base-content/80">
               没有找到相关结果
             </h1>
-            <p className="py-2 text-neutral max-w-xs mx-auto">
+            <p className="py-2 max-w-xs mx-auto">
               尝试精简关键词，或者使用更通用的法律术语。
             </p>
           </div>

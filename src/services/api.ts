@@ -120,13 +120,17 @@ export async function searchLawByName(
 
 // --- AI 与 Agent ---
 
-export async function startAgentSearch(query: string): Promise<LawChunk[]> {
+export async function startAgentSearch(query: string, eventId: string): Promise<LawChunk[]> {
   try {
-    return await invoke<LawChunk[]>("start_agent_search", { query });
+    return await invoke<LawChunk[]>("start_agent_search", { query, eventId });
   } catch (error) {
     console.error("Agent search failed:", error);
     throw error;
   }
+}
+
+export async function stopTask(eventId: string): Promise<void> {
+  return await invoke("stop_task", { eventId });
 }
 
 export async function startChatStream(

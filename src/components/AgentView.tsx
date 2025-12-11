@@ -12,9 +12,10 @@ import {
 interface AgentViewProps {
   event: AgentUpdateEvent | null;
   isProcessing: boolean;
+  onStop?: () => void;
 }
 
-export const AgentView: React.FC<AgentViewProps> = ({ event, isProcessing }) => {
+export const AgentView: React.FC<AgentViewProps> = ({ event, isProcessing, onStop }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,6 +47,14 @@ export const AgentView: React.FC<AgentViewProps> = ({ event, isProcessing }) => 
            {event?.step_type === "thinking" && "思考调整..."}
            {event?.step_type === "finished" && "完成"}
         </div>
+        {isProcessing && onStop && (
+             <button 
+               onClick={onStop}
+               className="btn btn-xs btn-error btn-outline"
+             >
+               停止思考
+             </button>
+           )}
       </div>
 
       <div ref={containerRef} className="p-4 max-h-[300px] overflow-y-auto space-y-4">

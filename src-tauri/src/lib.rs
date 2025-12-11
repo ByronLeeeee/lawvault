@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 
 // ==========================================
@@ -207,6 +208,7 @@ pub struct AppState {
     // 存储 user_data.db 的路径，方便后续连接
     pub user_db_path: PathBuf,
     pub chat_tasks: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
+    pub agent_abort_flags: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 // --- Agent 相关结构 ---
@@ -587,8 +589,26 @@ pub async fn search_law_logic(
 async fn start_agent_search(
     window: tauri::Window,
     query: String,
+    event_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<LawChunk>, String> {
+    let should_run = Arc::new(AtomicBool::new(true));
+    {
+        let mut flags = state.agent_abort_flags.lock().unwrap();
+        flags.insert(event_id.clone(), should_run.clone());
+    }
+
+    macro_rules! check_abort {
+        () => {
+            if !should_run.load(Ordering::Relaxed) {
+                // 清理并返回中断信号
+                let mut flags = state.agent_abort_flags.lock().unwrap();
+                flags.remove(&event_id);
+                return Err("深度思考已手动停止".to_string());
+            }
+        };
+    }
+
     let settings = state.settings.lock().unwrap().clone();
     let (model, base_url, api_key, max_loops) = (
         settings.chat_model,
@@ -602,6 +622,8 @@ async fn start_agent_search(
     // 使用 HashSet 收集 ID 去重，Vec 收集结果
     let mut all_found_chunks: Vec<LawChunk> = vec![];
     let mut seen_ids: HashSet<String> = HashSet::new();
+
+    check_abort!();
 
     window
         .emit(
@@ -631,6 +653,7 @@ async fn start_agent_search(
     let limit = if max_loops <= 0 { 20 } else { max_loops };
 
     while !todo_list.is_empty() && loop_count < limit {
+        check_abort!();
         loop_count += 1;
         let current_task = todo_list.remove(0);
 
@@ -648,6 +671,8 @@ async fn start_agent_search(
             .unwrap();
 
         let search_res = search_law_logic(current_task.clone(), None, &state).await;
+
+        check_abort!();
 
         let mut result_text = String::new();
         match search_res {
@@ -677,7 +702,7 @@ async fn start_agent_search(
         if result_text.trim().is_empty() {
             result_text = "未找到直接相关法条。".to_string();
         }
-
+        check_abort!();
         window
             .emit(
                 "agent-update",
@@ -699,7 +724,7 @@ async fn start_agent_search(
                 "{remaining_todo_list}",
                 &serde_json::to_string(&todo_list).unwrap_or("[]".into()),
             );
-
+        check_abort!();
         match call_llm(&model, &review_prompt, &base_url, &api_key).await {
             Ok(json) => {
                 let clean = clean_json_str(&json);
@@ -723,6 +748,11 @@ async fn start_agent_search(
                 });
             }
         }
+    }
+
+    {
+        let mut flags = state.agent_abort_flags.lock().unwrap();
+        flags.remove(&event_id);
     }
 
     window
@@ -1082,6 +1112,25 @@ fn stop_chat(event_id: String, state: tauri::State<'_, AppState>) -> Result<(), 
 }
 
 #[tauri::command]
+fn stop_task(event_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // 1. 尝试停止 Chat Stream 任务
+    let mut tasks = state.chat_tasks.lock().unwrap();
+    if let Some(handle) = tasks.remove(&event_id) {
+        handle.abort();
+        println!(">>> Chat task aborted: {}", event_id);
+    }
+
+    // 2. 尝试停止 Agent 循环
+    let mut flags = state.agent_abort_flags.lock().unwrap();
+    if let Some(flag) = flags.remove(&event_id) {
+        flag.store(false, Ordering::Relaxed); // 设置开关为 false
+        println!(">>> Agent loop abort signaled: {}", event_id);
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
 fn get_settings(state: tauri::State<'_, AppState>) -> AppSettings {
     state.settings.lock().unwrap().clone()
 }
@@ -1361,6 +1410,7 @@ pub fn run() {
                 app_data_dir: final_app_data_dir,
                 user_db_path: final_user_db_path,
                 chat_tasks: Mutex::new(HashMap::new()),
+                agent_abort_flags: Mutex::new(HashMap::new()),
             });
 
             Ok(())
@@ -1368,7 +1418,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search_law,
             chat_stream,
-            stop_chat,
+            stop_chat, 
+            stop_task,
             get_settings,
             save_settings,
             search_law_by_name,

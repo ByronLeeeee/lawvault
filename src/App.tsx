@@ -22,7 +22,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Settings, Star } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { UpdateModal, GithubUpdate } from "./components/UpdateModal";
-import { startAgentSearch, AgentUpdateEvent } from "./services/api";
+import { startAgentSearch, AgentUpdateEvent, stopTask } from "./services/api";
 import { AgentView } from "./components/AgentView";
 import { listen } from "@tauri-apps/api/event";
 import { Sparkles } from "lucide-react";
@@ -173,8 +173,13 @@ function App() {
       setIsSettingsOpen(false);
     }
   };
+  const currentAgentIdRef = useRef<string | null>(null);
   const handleSearch = async (searchQuery: string) => {
     if (!searchQuery.trim()) return;
+    if (currentAgentIdRef.current) {
+      await stopTask(currentAgentIdRef.current);
+      currentAgentIdRef.current = null;
+    }
     setExecutedQuery(searchQuery);
     setIsLoading(true);
     setError(null);
@@ -183,11 +188,14 @@ function App() {
     setRawResults([]);
     addToHistory(searchQuery);
 
+    const newAgentId = `agent-${Date.now()}`;
+    currentAgentIdRef.current = newAgentId;
+
     try {
       if (isDeepThink) {
         // === Agent 模式 ===
         setIsAgentRunning(true);
-        const agentResults = await startAgentSearch(searchQuery);
+        const agentResults = await startAgentSearch(searchQuery, newAgentId);
         setRawResults(agentResults);
       } else {
         // === 普通模式 ===
@@ -196,17 +204,33 @@ function App() {
         setRawResults(response.results);
       }
     } catch (err) {
-      setError("搜索失败，请检查服务日志。");
-      console.error(err);
+      const errorMsg = String(err);
+      
+      if (errorMsg.includes("手动停止")) {
+         console.log("用户停止深度思考，自动降级为普通搜索...");
+         toast("已停止深度思考，显示普通搜索结果", { icon: "🛑" });
+         setIsDeepThink(false);       
+         try {
+             const regionParam = searchLocal ? regionQuery : undefined;
+             const response = await searchLaw(searchQuery, regionParam);
+             setRawResults(response.results);
+         } catch (fallbackErr) {
+             setError("普通搜索也失败了: " + String(fallbackErr));
+         }
+      } else {
+         setError("搜索失败，请检查服务日志。");
+         console.error(err);
+      }
     } finally {
       setIsLoading(false);
       setIsAgentRunning(false);
+      currentAgentIdRef.current = null;
     }
   };
 
   const handleSuggestionClick = (suggestion: LawNameSuggestion) => {
     const lawToView: LawChunk = {
-      id: `${suggestion.name}-full-text`, 
+      id: `${suggestion.name}-full-text`,
       law_name: suggestion.name,
       source_file: `${suggestion.name}.txt`,
       article_number: "全文",
@@ -221,7 +245,6 @@ function App() {
 
     setSelectedLaw(lawToView);
   };
-
 
   const visibleCategories = useMemo(() => {
     const categoriesInResults = new Set(rawResults.map((r) => r.category));
@@ -452,7 +475,15 @@ function App() {
 
         {hasSearched && isDeepThink && (
           <div className="max-w-4xl mx-auto mt-8 px-4">
-            <AgentView event={agentEvent} isProcessing={isAgentRunning} />
+            <AgentView
+              event={agentEvent}
+              isProcessing={isAgentRunning}
+              onStop={() => {
+                if (currentAgentIdRef.current) {
+                  stopTask(currentAgentIdRef.current);
+                }
+              }}
+            />
           </div>
         )}
 
