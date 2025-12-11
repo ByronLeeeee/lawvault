@@ -3,7 +3,7 @@ use futures::StreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -206,6 +206,7 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     // 存储 user_data.db 的路径，方便后续连接
     pub user_db_path: PathBuf,
+    pub chat_tasks: Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>,
 }
 
 // --- Agent 相关结构 ---
@@ -996,54 +997,86 @@ async fn chat_stream(
     };
 
     let user_prompt = format!("用户问题：{}\n\n请开始分析：", query);
+    let event_id_for_task = event_id.clone();
 
-    let client = reqwest::Client::new();
-    let url = format!(
-        "{}/chat/completions",
-        settings.chat_base_url.trim_end_matches('/')
-    );
+    let chat_task = tauri::async_runtime::spawn(async move {
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/chat/completions",
+            settings.chat_base_url.trim_end_matches('/')
+        );
 
-    let mut stream = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", settings.chat_api_key))
-        .json(&serde_json::json!({
-            "model": settings.chat_model,
-            "messages": [
-                { "role": "system", "content": system_prompt },
-                { "role": "user", "content": user_prompt }
-            ],
-            "stream": true,
-            "temperature": if mode == "deep" { 0.4 } else { 0.3 }
-        }))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .bytes_stream();
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", settings.chat_api_key))
+            .json(&serde_json::json!({
+                "model": settings.chat_model,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": user_prompt }
+                ],
+                "stream": true,
+                "temperature": if mode == "deep" { 0.4 } else { 0.3 }
+            }))
+            .send()
+            .await;
 
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                for line in text.lines() {
-                    if line.starts_with("data: ") {
-                        let json_str = line.trim_start_matches("data: ").trim();
-                        if json_str == "[DONE]" {
-                            break;
-                        }
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
-                                let _ = app.emit(&event_id, content);
-                            } else if let Some(content) = json["message"]["content"].as_str() {
-                                let _ = app.emit(&event_id, content);
+        match response {
+            Ok(res) => {
+                let mut stream = res.bytes_stream();
+                while let Some(item) = stream.next().await {
+                    match item {
+                        Ok(bytes) => {
+                            let text = String::from_utf8_lossy(&bytes);
+                            for line in text.lines() {
+                                if line.starts_with("data: ") {
+                                    let json_str = line.trim_start_matches("data: ").trim();
+                                    if json_str == "[DONE]" {
+                                        break;
+                                    }
+                                    if let Ok(json) =
+                                        serde_json::from_str::<serde_json::Value>(json_str)
+                                    {
+                                        if let Some(content) =
+                                            json["choices"][0]["delta"]["content"].as_str()
+                                        {
+                                            let _ = app.emit(&event_id_for_task, content);
+                                        } else if let Some(content) =
+                                            json["message"]["content"].as_str()
+                                        {
+                                            let _ = app.emit(&event_id_for_task, content);
+                                        }
+                                    }
+                                }
                             }
+                        }
+                        Err(e) => {
+                            let _ = app.emit(&event_id_for_task, format!("[Error: {}]", e));
                         }
                     }
                 }
             }
             Err(e) => {
-                let _ = app.emit("chat-token", format!("[Error: {}]", e));
+                let _ = app.emit(&event_id_for_task, format!("[Error: {}]", e));
             }
         }
+    });
+
+    // 3. 将任务句柄存入 Map (使用原始的 event_id)
+    {
+        let mut tasks = state.chat_tasks.lock().unwrap();
+        tasks.insert(event_id, chat_task);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_chat(event_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut tasks = state.chat_tasks.lock().unwrap();
+    if let Some(handle) = tasks.remove(&event_id) {
+        handle.abort(); // 强制中止任务
+        println!(">>> Chat task aborted: {}", event_id);
     }
     Ok(())
 }
@@ -1327,6 +1360,7 @@ pub fn run() {
                 settings_path: final_settings_path,
                 app_data_dir: final_app_data_dir,
                 user_db_path: final_user_db_path,
+                chat_tasks: Mutex::new(HashMap::new()),
             });
 
             Ok(())
@@ -1334,6 +1368,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search_law,
             chat_stream,
+            stop_chat,
             get_settings,
             save_settings,
             search_law_by_name,

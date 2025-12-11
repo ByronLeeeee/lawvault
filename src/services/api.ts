@@ -133,11 +133,10 @@ export async function startChatStream(
   query: string,
   contextChunks: string[],
   mode: "simple" | "deep",
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  externalEventId?: string
 ) {
-  const eventId = `chat-token-${Date.now()}-${Math.random()
-    .toString(36)
-    .substring(2, 9)}`;
+  const eventId = externalEventId || `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
   const unlisten = await listen<string>(eventId, (event) => {
     onToken(event.payload);
@@ -284,4 +283,8 @@ export async function selectFolder(): Promise<string | null> {
     console.error("Select folder failed", e);
     return null;
   }
+}
+
+export async function stopChat(eventId: string): Promise<void> {
+  return await invoke("stop_chat", { eventId });
 }

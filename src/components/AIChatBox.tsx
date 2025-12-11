@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { Sparkles, Bot, AlertCircle, FileText } from "lucide-react";
-import { startChatStream, getSettings } from "../services/api";
+// src/components/AIChatBox.tsx
+import React, { useState, useEffect, useRef } from "react";
+import { Sparkles, Bot, AlertCircle, FileText, Square } from "lucide-react"; // 增加 Square 图标
+import { startChatStream, getSettings, stopChat } from "../services/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -10,15 +11,14 @@ interface AIChatBoxProps {
   mode?: "simple" | "deep";
 }
 
-export const AIChatBox: React.FC<AIChatBoxProps> = ({
-  query,
-  results,
-  mode = "simple",
-}) => {
+export const AIChatBox: React.FC<AIChatBoxProps> = ({ query, results, mode = "simple" }) => {
   const [answer, setAnswer] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // 使用 Ref 存储当前的 eventId，确保在清理函数中能拿到最新的 ID
+  const eventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     getSettings().then((settings) => {
@@ -26,11 +26,22 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
     });
   }, []);
 
+  // 停止生成的函数
+  const handleStop = async () => {
+    if (eventIdRef.current) {
+      await stopChat(eventIdRef.current);
+      setIsStreaming(false);
+    }
+  };
+
   useEffect(() => {
     if (!isEnabled || !query || results.length === 0) return;
 
     let unlisten: (() => void) | undefined;
-    let isActive = true;
+    
+    // 生成唯一 ID
+    const currentEventId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    eventIdRef.current = currentEventId;
 
     const start = async () => {
       setAnswer("");
@@ -42,19 +53,14 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
           (r) => `法规：${r.law_name} ${r.article_number}\n内容：${r.content}`
         );
 
-        unlisten = await startChatStream(
-          query,
-          contextChunks,
-          mode,
-          (token) => {
-            if (token.startsWith("[Error:")) {
-              setError(token);
-              setIsStreaming(false);
-            } else {
-              setAnswer((prev) => prev + token);
-            }
+        unlisten = await startChatStream(query, contextChunks, mode, (token) => {
+          if (token.startsWith("[Error:")) {
+            setError(token);
+            setIsStreaming(false);
+          } else {
+            setAnswer((prev) => prev + token);
           }
-        );
+        }, currentEventId); // 传入 ID
       } catch (e) {
         setError("无法连接 AI 服务");
         setIsStreaming(false);
@@ -63,9 +69,12 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
 
     start();
 
+    // 清理函数：组件卸载或 query 变化时触发
     return () => {
-      isActive = false; 
       if (unlisten) unlisten();
+      if (eventIdRef.current) {
+        stopChat(eventIdRef.current);
+      }
       setIsStreaming(false);
     };
   }, [query, results, isEnabled, mode]);
@@ -73,38 +82,42 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
   if (!isEnabled) return null;
 
   return (
-    <div
-      className={`card border mb-6 shadow-sm overflow-hidden transition-colors ${
-        mode === "deep"
-          ? "bg-primary/5 border-primary/20"
-          : "bg-base-200/40 border-base-300"
-      }`}
-    >
+    <div className={`card border mb-6 shadow-sm overflow-hidden transition-colors group ${
+        mode === "deep" ? "bg-primary/5 border-primary/20" : "bg-base-200/40 border-base-300"
+    }`}>
       <div className="card-body py-4 px-5">
-        <h3
-          className={`font-bold flex items-center gap-2 text-sm select-none mb-2 ${
-            mode === "deep" ? "text-primary" : "text-base-content/80"
-          }`}
-        >
-          {mode === "deep" ? <FileText size={16} /> : <Sparkles size={16} />}
-          {mode === "deep" ? "AI 法律检索报告" : "AI 助手归纳"}
-          {isStreaming && (
-            <span className="loading loading-dots loading-xs opacity-50"></span>
-          )}
-        </h3>
+        <div className="flex justify-between items-center mb-2">
+            <h3 className={`font-bold flex items-center gap-2 text-sm select-none ${
+                mode === "deep" ? "text-primary" : "text-base-content/80"
+            }`}>
+              {mode === "deep" ? <FileText size={16} /> : <Sparkles size={16} />}
+              {mode === "deep" ? "AI 法律检索报告" : "AI 助手简评"}
+              {isStreaming && (
+                <span className="loading loading-dots loading-xs opacity-50"></span>
+              )}
+            </h3>
+            
+            {/* 停止按钮：仅在生成时显示 */}
+            {isStreaming && (
+                <button 
+                    onClick={handleStop}
+                    className="btn btn-xs btn-ghost text-error gap-1 hover:bg-error/10 transition-colors"
+                >
+                    <Square size={12} className="fill-current" /> 停止生成
+                </button>
+            )}
+        </div>
 
         {error ? (
           <div className="text-error text-xs flex items-center gap-2 bg-error/10 p-2 rounded">
             <AlertCircle size={14} /> {error}
           </div>
         ) : (
-          <div
-            className="text-base-content/90 animate-in fade-in prose prose-sm max-w-none 
+          <div className="text-base-content/90 animate-in fade-in prose prose-sm max-w-none 
               prose-headings:font-bold prose-headings:text-base-content prose-headings:mt-4 prose-headings:mb-2 
               prose-p:text-base-content/90 prose-p:leading-relaxed prose-p:my-2
               prose-li:text-base-content/90 prose-li:my-0.5
-              prose-strong:text-primary prose-strong:font-bold"
-          >
+              prose-strong:text-primary prose-strong:font-bold">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
           </div>
         )}
@@ -118,11 +131,9 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({
       </div>
       {isStreaming && (
         <div className="h-0.5 w-full bg-base-content/5 overflow-hidden">
-          <div
-            className={`h-full w-1/3 animate-[progress_1s_ease-in-out_infinite_alternate] ${
+          <div className={`h-full w-1/3 animate-[progress_1s_ease-in-out_infinite_alternate] ${
               mode === "deep" ? "bg-primary" : "bg-base-content/20"
-            }`}
-          ></div>
+          }`}></div>
         </div>
       )}
     </div>
