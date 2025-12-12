@@ -33,12 +33,12 @@ jobs:
       matrix:
         include:
           # macOS: 只构建 Apple Silicon (aarch64) 版本
-          # - platform: 'macos-latest'
-          #   args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
-          # - platform: 'windows-latest'
-          #   args: ''
+          - platform: 'windows-latest'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     
