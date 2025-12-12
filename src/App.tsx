@@ -578,7 +578,12 @@ function App() {
                 zIndex: activeTabId === tab.id ? 10 : 0,
               }}
             >
-              {tab.data?.law && <LawDetailView law={tab.data.law} />}
+              {tab.data?.law && (
+                  <LawDetailView 
+                    law={tab.data.law} 
+                    onOpenLink={(targetLaw) => openLawTab(targetLaw)}
+                  />
+                )}
             </div>
           );
         })}

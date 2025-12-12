@@ -917,20 +917,44 @@ async fn check_ai_connection(
 fn get_full_text(source_file: String, state: tauri::State<'_, AppState>) -> Result<String, String> {
     let data_dir = get_effective_data_dir(&state);
     let conn = connect_sqlite(&data_dir)?;
+    let raw_name = source_file.trim_end_matches(".txt");
 
-    let law_name = source_file.trim_end_matches(".txt");
-    let sql = "SELECT full_text FROM full_texts WHERE law_name = ?";
-
-    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let mut rows = stmt
-        .query(rusqlite::params![law_name])
+    let mut stmt = conn.prepare("SELECT full_text FROM full_texts WHERE law_name = ? LIMIT 1")
+        .map_err(|e| e.to_string())?;
+    
+    let mut rows = stmt.query(rusqlite::params![raw_name])
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        Ok(row.get(0).map_err(|e| e.to_string())?)
-    } else {
-        Err("未找到该法条全文".to_string())
+        return Ok(row.get(0).map_err(|e| e.to_string())?);
     }
+
+    let fuzzy_pattern = format!("%{}", raw_name);
+    
+    let mut stmt = conn.prepare(
+        "SELECT full_text FROM full_texts WHERE law_name LIKE ? ORDER BY length(law_name) ASC LIMIT 1"
+    ).map_err(|e| e.to_string())?;
+
+    let mut rows = stmt.query(rusqlite::params![fuzzy_pattern])
+        .map_err(|e| e.to_string())?;
+
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        return Ok(row.get(0).map_err(|e| e.to_string())?);
+    }
+
+    let loose_pattern = format!("%{}%", raw_name);
+    let mut stmt = conn.prepare(
+        "SELECT full_text FROM full_texts WHERE law_name LIKE ? ORDER BY length(law_name) ASC LIMIT 1"
+    ).map_err(|e| e.to_string())?;
+    
+    let mut rows = stmt.query(rusqlite::params![loose_pattern])
+        .map_err(|e| e.to_string())?;
+
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        return Ok(row.get(0).map_err(|e| e.to_string())?);
+    }
+
+    Err(format!("未找到法律文件：{}", raw_name))
 }
 
 #[tauri::command]
