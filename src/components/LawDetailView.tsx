@@ -1,9 +1,16 @@
-// src/components/LawDetailView.tsx
-
 import React, { useState, useEffect, useRef } from "react";
 import { getArticleSnippet, getFullText, LawChunk } from "../services/api";
-import { AnimatePresence } from "framer-motion";
-import { LoaderCircle, ServerCrash, Copy, Check } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  LoaderCircle,
+  ServerCrash,
+  Copy,
+  Check,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  X,
+} from "lucide-react";
 import { CustomPopover } from "./CustomPopover";
 
 interface LawDetailViewProps {
@@ -16,7 +23,6 @@ interface TOCItem {
   level: 1 | 1.5 | 2 | 3;
 }
 
-// --- 样式常量 ---
 const partClasses =
   "text-3xl font-black text-center mt-16 mb-8 text-base-content tracking-widest";
 const subPartClasses =
@@ -39,6 +45,15 @@ const centerTitleClasses =
 const preambleClasses =
   "text-lg leading-8 text-base-content/70 mb-4 px-4 lg:px-10 font-serif indent-8 text-justify";
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
   const [fullText, setFullText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -47,7 +62,13 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [toc, setToc] = useState<TOCItem[]>([]);
 
-  // Popover State
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedQuery = useDebounce(searchQuery, 300);
+  const [matchCount, setMatchCount] = useState(0);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const snippetCache = useRef<Map<string, string>>(new Map());
   const [popoverState, setPopoverState] = useState({
     visible: false,
     content: "",
@@ -73,7 +94,23 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
     fetchFullText();
   }, [law.source_file]);
 
-  // TOC Generation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setShowSearch(true);
+
+        setTimeout(() => searchInputRef.current?.select(), 50);
+      }
+      if (e.key === "Escape" && showSearch) {
+        setShowSearch(false);
+        setSearchQuery("");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showSearch]);
+
   useEffect(() => {
     if (fullText) {
       const lines = fullText.split("\n");
@@ -154,6 +191,58 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
     }
   }, [fullText]);
 
+  useEffect(() => {
+    if (!debouncedQuery) {
+      setMatchCount(0);
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    setTimeout(() => {
+      const matches = document.querySelectorAll(".law-search-match");
+      setMatchCount(matches.length);
+      if (matches.length > 0) {
+        scrollToMatch(0);
+      }
+    }, 100);
+  }, [debouncedQuery]);
+
+  const scrollToMatch = (index: number) => {
+    const matches = document.querySelectorAll(".law-search-match");
+    if (matches.length === 0) return;
+
+    let targetIndex = index;
+    if (index >= matches.length) targetIndex = 0;
+    if (index < 0) targetIndex = matches.length - 1;
+
+    setCurrentMatchIndex(targetIndex);
+
+    const target = matches[targetIndex];
+
+    document.querySelectorAll(".law-search-match-active").forEach((el) => {
+      el.classList.remove(
+        "law-search-match-active",
+        "bg-warning",
+        "text-warning-content"
+      );
+      el.classList.add("bg-yellow-200", "text-base-content");
+    });
+
+    target.classList.remove("bg-yellow-200", "text-base-content");
+    target.classList.add(
+      "law-search-match-active",
+      "bg-warning",
+      "text-warning-content",
+      "ring-2",
+      "ring-warning-content/50"
+    );
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const handleNextMatch = () => scrollToMatch(currentMatchIndex + 1);
+  const handlePrevMatch = () => scrollToMatch(currentMatchIndex - 1);
+
   const handleCopy = (articleId: string, content: string) => {
     const artNum = articleId.replace("article-", "");
     const textToCopy = `《${law.law_name}》${artNum}：\n${content}`;
@@ -166,54 +255,153 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
     lawNameRef: string | undefined,
     artNum: string
   ) => {
+    const SELF_REFERENCE_PATTERNS =
+      /^(本法|本实施条例|本办法|本规定|本条例|本细则|本规则|本办法实施细则|本解释)$/;
+    let targetLaw = null;
+
+    if (lawNameRef && !SELF_REFERENCE_PATTERNS.test(lawNameRef)) {
+      targetLaw = lawNameRef;
+    }
+
+    const cacheKey = `${targetLaw || "CURRENT"}-${artNum}`;
+
+    if (snippetCache.current.has(cacheKey)) {
+      setPopoverState((prev) => ({
+        ...prev,
+        visible: true,
+        content: snippetCache.current.get(cacheKey) || "",
+      }));
+      return;
+    }
+
     setPopoverState((prev) => ({
       ...prev,
       visible: true,
       content: "正在查找条文...",
     }));
-    // 如果正则没捕获到法名，或者法名包含特定的自我引用表述，则视为当前法律
-    const SELF_REFERENCE_PATTERNS =
-      /^(本法|本实施条例|本办法|本规定|本条例|本细则|本规则|本办法实施细则)$/;
-    let targetLaw = null;
-    if (lawNameRef && !SELF_REFERENCE_PATTERNS.test(lawNameRef)) {
-      targetLaw = lawNameRef;
+
+    try {
+      const content = await getArticleSnippet(targetLaw, artNum, law.law_name);
+
+      snippetCache.current.set(cacheKey, content);
+
+      setPopoverState((prev) => (prev.visible ? { ...prev, content } : prev));
+    } catch (e) {
+      setPopoverState((prev) =>
+        prev.visible ? { ...prev, content: "加载失败" } : prev
+      );
     }
-    const content = await getArticleSnippet(targetLaw, artNum, law.law_name);
-    setPopoverState((prev) => ({ ...prev, content: content }));
   };
 
   const cleanLawName = (raw: string | undefined): string | null => {
     if (!raw) return null;
-    if (raw.startsWith("《") && raw.endsWith("》"))
-      return raw.replace(/[《》]/g, "");
-    if (raw === "本法") return null;
-    const stopWords = [
+    let cleaned = raw.trim();
+
+    
+    const bookTitleMatch = cleaned.match(/《([^《》]+)》/g);
+    if (bookTitleMatch) {
+      const lastMatch = bookTitleMatch[bookTitleMatch.length - 1];
+      return lastMatch.replace(/[《》]/g, "");
+    }
+
+    
+    const SELF_REF_REGEX =
+      /^(本法|本实施条例|本办法|本规定|本条例|本细则|本规则|本办法实施细则|本解释)$/;
+    if (SELF_REF_REGEX.test(cleaned)) return null;
+
+    
+    const strongSeparators = [
+      "依据",
       "根据",
+      "按照",
+      "依照",
+      "参照",
       "违反",
       "适用",
-      "照",
       "执行",
-      "于",
       "实施",
-      "履行", // 动词
-      "的",
-      "在",
+      "履行",
+      "触犯",
+      "属于",
+      "计算",
+      "包括",
+      "包含",
+      "以及",
+    ];
+
+    for (const sep of strongSeparators) {
+      if (cleaned.includes(sep)) {
+        cleaned = cleaned.split(sep).pop()?.trim() || cleaned;
+      }
+    }
+
+    
+    
+    const weakPrefixes = [
+      "关于",
+      "对于",
       "与",
       "和",
       "及",
       "向",
       "对",
       "为",
-      "是", // 介词/连词
+      "是",
+      "在",
+      "的",
+      "于",
+      "照",
+      "算",
+      "含",
+      "括",
+      "犯", 
     ];
-    let cleaned = raw;
-    for (const word of stopWords) {
-      if (cleaned.includes(word)) {
-        cleaned = cleaned.split(word).pop() || cleaned;
+
+    let hasChanged = true;
+    while (hasChanged) {
+      hasChanged = false;
+      for (const prefix of weakPrefixes) {
+        if (cleaned.startsWith(prefix)) {
+          cleaned = cleaned.substring(prefix.length).trim();
+          hasChanged = true;
+          break;
+        }
       }
     }
-    if (cleaned.length < 2 || cleaned.length > 20) return null;
+
+    
+    if (cleaned.length < 2 || cleaned.length > 60) return null;
+
     return cleaned;
+  };
+
+  const highlightContent = (nodes: React.ReactNode[]): React.ReactNode[] => {
+    if (!debouncedQuery.trim()) return nodes;
+
+    const regex = new RegExp(
+      `(${debouncedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi"
+    );
+
+    return nodes.flatMap((node, i) => {
+      if (typeof node === "string") {
+        const parts = node.split(regex);
+        return parts.map((part, j) => {
+          if (regex.test(part)) {
+            return (
+              <mark
+                key={`${i}-${j}`}
+                className="law-search-match bg-yellow-200 text-base-content rounded-sm px-0.5 mx-px transition-colors duration-200"
+              >
+                {part}
+              </mark>
+            );
+          }
+          return part;
+        });
+      }
+      return node;
+    });
   };
 
   const renderParagraphWithReferences = (
@@ -221,9 +409,12 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
     paraKey: string
   ) => {
     const referencePattern =
-      /((?:《[^《》]+》)|(?:本法)|(?:(?!依照|根据|违反|适用|参照|按照|执行|属于)[\u4e00-\u9fa5]{2,25}法))?(第[一二三四五六七八九十百]+条(?:之一|之二)?)/g;
+      /((?:《[^《》]+》)|(?:本法)|(?:(?!依照|根据|违反|适用|参照|按照|执行|属于|计算|触犯|包括|包含|以及|算|含|括|犯)[\u4e00-\u9fa5]{2,25}法))?(第[一二三四五六七八九十百]+条(?:之一|之二)?)/g;
     const matches = [...paragraphText.matchAll(referencePattern)];
-    if (matches.length === 0) return paragraphText;
+
+    if (matches.length === 0) {
+      return <>{highlightContent([paragraphText])}</>;
+    }
 
     const result: React.ReactNode[] = [];
     let lastIndex = 0;
@@ -263,8 +454,10 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
       if (currentLawName) lastContextLawName = currentLawName;
       else if (!effectiveLawName) lastContextLawName = null;
 
-      if (startIndex > lastIndex)
-        result.push(paragraphText.substring(lastIndex, startIndex));
+      if (startIndex > lastIndex) {
+        const textPart = paragraphText.substring(lastIndex, startIndex);
+        result.push(textPart);
+      }
       if (prefix) result.push(prefix);
 
       result.push(
@@ -334,9 +527,11 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
       lastIndex = startIndex + fullMatch.length;
     });
 
-    if (lastIndex < paragraphText.length)
+    if (lastIndex < paragraphText.length) {
       result.push(paragraphText.substring(lastIndex));
-    return <>{result}</>;
+    }
+
+    return <>{highlightContent(result)}</>;
   };
 
   const renderFormattedText = (text: string) => {
@@ -378,7 +573,9 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
                 if (match) {
                   return (
                     <p key={idx} className={paragraphClasses}>
-                      <span className={articleLabelClasses}>{match[1]}</span>
+                      <span className={articleLabelClasses}>
+                        {highlightContent([match[1]])}
+                      </span>
                       {renderParagraphWithReferences(
                         match[2],
                         `${currentArticleId}-${idx}`
@@ -416,7 +613,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
             id={`part-${index}`}
             className={partClasses}
           >
-            {trimmedLine}
+            {highlightContent([trimmedLine])}
           </h2>
         );
         return;
@@ -430,7 +627,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
             id={`subpart-${index}`}
             className={subPartClasses}
           >
-            {trimmedLine}
+            {highlightContent([trimmedLine])}
           </h2>
         );
         return;
@@ -444,7 +641,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
             id={`chapter-${index}`}
             className={chapterClasses}
           >
-            {trimmedLine}
+            {highlightContent([trimmedLine])}
           </h3>
         );
         return;
@@ -458,7 +655,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
             id={`section-${index}`}
             className={sectionClasses}
           >
-            {trimmedLine}
+            {highlightContent([trimmedLine])}
           </h4>
         );
         return;
@@ -479,7 +676,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
         if (/^目\s*录$/.test(trimmedLine)) {
           resultNodes.push(
             <h2 key={`toc-title-${index}`} className={centerTitleClasses}>
-              {trimmedLine}
+              {highlightContent([trimmedLine])}
             </h2>
           );
         } else if (
@@ -488,7 +685,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
         ) {
           resultNodes.push(
             <div key={`meta-${index}`} className={docMetaClasses}>
-              {trimmedLine}
+              {highlightContent([trimmedLine])}
             </div>
           );
         } else if (
@@ -497,20 +694,20 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
         ) {
           resultNodes.push(
             <h1 key={`title-${index}`} className={docTitleClasses}>
-              {trimmedLine}
+              {highlightContent([trimmedLine])}
             </h1>
           );
         } else {
           resultNodes.push(
             <p key={`preamble-${index}`} className={preambleClasses}>
-              {trimmedLine}
+              {highlightContent([trimmedLine])}
             </p>
           );
         }
       } else {
         resultNodes.push(
           <p key={`orphan-${index}`} className="text-center text-neutral my-4">
-            {trimmedLine}
+            {highlightContent([trimmedLine])}
           </p>
         );
       }
@@ -569,7 +766,59 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
   }, [isLoading, fullText, law.article_number]);
 
   return (
-    <div className="flex flex-row h-full w-full bg-base-100 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="flex flex-row h-full w-full bg-base-100 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200 group/view">
+      {/* 搜索框 (Sticky & Absolute) */}
+      <AnimatePresence>
+        {showSearch && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className="absolute top-20 right-8 z-50 bg-base-100 shadow-xl border border-base-200 rounded-lg p-2 flex items-center gap-2"
+          >
+            <div className="join">
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="查找..."
+                className="input input-sm input-bordered join-item w-48 focus:outline-none"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <button
+                className="btn btn-sm join-item btn-square"
+                onClick={handlePrevMatch}
+                disabled={matchCount === 0}
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                className="btn btn-sm join-item btn-square"
+                onClick={handleNextMatch}
+                disabled={matchCount === 0}
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+            <div className="text-xs text-base-content/50 font-mono w-16 text-center">
+              {matchCount > 0
+                ? `${currentMatchIndex + 1} / ${matchCount}`
+                : "0 / 0"}
+            </div>
+            <button
+              className="btn btn-sm btn-ghost btn-circle"
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery("");
+              }}
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 侧边目录 */}
       {toc.length > 0 && (
         <div className="w-64 bg-base-200/50 border-r border-base-300 h-full overflow-y-auto p-4 hidden xl:block shrink-0">
           <h4 className="font-bold text-sm mb-4 text-base-content/50 uppercase tracking-wider">
@@ -603,11 +852,12 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
         </div>
       )}
 
+      {/* 主内容 */}
       <div className="grow relative flex flex-col h-full min-w-0">
         <header className="px-8 py-4 border-b border-base-200 shrink-0 bg-base-100/95 backdrop-blur z-10 flex items-center justify-between">
-          <div>
+          <div className="flex-1 min-w-0">
             <h3
-              className="font-extrabold text-xl text-base-content truncate max-w-2xl"
+              className="font-extrabold text-xl text-base-content truncate"
               title={law.law_name}
             >
               {law.law_name}
@@ -618,6 +868,19 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({ law }) => {
               </span>
             )}
           </div>
+          {/* 如果没显示搜索框，显示一个搜索按钮作为提示 */}
+          {!showSearch && (
+            <button
+              onClick={() => {
+                setShowSearch(true);
+                setTimeout(() => searchInputRef.current?.select(), 50);
+              }}
+              className="btn btn-ghost btn-sm btn-circle text-base-content/50 hover:text-primary ml-4"
+              title="页内查找 (Ctrl+F)"
+            >
+              <Search size={18} />
+            </button>
+          )}
         </header>
 
         <div
