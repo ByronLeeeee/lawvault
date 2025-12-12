@@ -33,12 +33,12 @@ jobs:
       matrix:
         include:
           # macOS: 只构建 Apple Silicon (aarch64) 版本
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
+          # - platform: 'macos-latest'
+          #   args: '--target aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
-          - platform: 'windows-latest'
-            args: ''
+          # - platform: 'windows-latest'
+          #   args: ''
 
     runs-on: ${{ matrix.platform }}
     
@@ -67,7 +67,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev protobuf-compiler
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev protobuf-compiler libfuse2 file
 
       # --- Windows 依赖 ---
       - name: Install Protoc (Windows)
