@@ -133,23 +133,31 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({ query, results, mode = "si
                         <BrainCircuit size={14} />
                         {isStreaming && !content ? "正在深度思考..." : "思考过程"}
                     </div>
-                    <div className="collapse-content text-xs text-base-content/70 font-mono leading-relaxed bg-base-200/30">
-                        <div className="pt-2 whitespace-pre-wrap break-all">{thought}</div>
+                    
+                    <div className="collapse-content bg-base-200/30 pb-0!"> 
+                        <div className="max-h-60 overflow-y-auto overflow-x-hidden pt-2 pb-2 text-xs text-base-content/70 font-mono leading-relaxed whitespace-pre-wrap break-all custom-scrollbar">
+                           {thought}
+                        </div>
                     </div>
                 </div>
             )}
 
             {/* 2. 正文展示区 */}
-            <div className="
-                w-full 
+             <div className="
+                w-full
                 text-base-content/90 animate-in fade-in 
                 prose prose-sm max-w-none 
                 prose-headings:text-base-content 
                 prose-p:text-base-content/90 
                 prose-strong:text-primary 
-                max-h-96 overflow-y-auto overflow-x-hidden 
-                break-all whitespace-pre-wrap 
-                custom-scrollbar pr-2
+                
+                max-h-96 
+                overflow-y-auto 
+                overflow-x-auto
+                custom-scrollbar 
+                pr-2
+                
+                **:break-all
             ">
               
               {!content && isStreaming && !thought && <span className="opacity-50 text-xs">正在分析法律依据...</span>}
