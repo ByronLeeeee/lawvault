@@ -1,7 +1,7 @@
 // src/components/TabBar.tsx
 import React from "react";
 import { Tab } from "../types";
-import { X, Search, FileText, Plus } from "lucide-react";
+import { X, Search, FileText, Plus, PenTool } from "lucide-react";
 import { Reorder } from "framer-motion"; 
 
 interface TabBarProps {
@@ -11,6 +11,7 @@ interface TabBarProps {
   onClose: (id: string) => void;
   onNewSearch: () => void;
   onReorder: (newTabs: Tab[]) => void;
+  onOpenDrafting: () => void;
 }
 
 export const TabBar: React.FC<TabBarProps> = ({
@@ -20,6 +21,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onClose,
   onNewSearch,
   onReorder,
+  onOpenDrafting,
 }) => {
   const fixedTabs = tabs.filter(t => t.id === "home");
   const sortableTabs = tabs.filter(t => t.id !== "home");
@@ -32,13 +34,15 @@ export const TabBar: React.FC<TabBarProps> = ({
     <>
       {tab.type === "search" ? (
         <Search size={14} className={isActive ? "stroke-2" : ""} />
+      ) : tab.type === "drafting" ? (
+        <PenTool size={14} className={isActive ? "stroke-2" : ""} />
       ) : (
         <FileText size={14} className={isActive ? "stroke-2" : ""} />
       )}
       <span className="truncate flex-1">{tab.title}</span>
-      {(tabs.length > 1 || tab.type !== "search") && (
+      {tab.id !== "home" && (
         <button
-          onPointerDown={(e) => e.stopPropagation()} 
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onClose(tab.id);
@@ -117,6 +121,14 @@ export const TabBar: React.FC<TabBarProps> = ({
       >
         <Plus size={16} />
       </button>
+
+      <button
+            onClick={onOpenDrafting}
+            className="btn btn-ghost btn-xs btn-square hover:bg-base-300 text-base-content/50"
+            title="写作助手"
+        >
+            <PenTool size={14} />
+        </button>
     </div>
   );
 };

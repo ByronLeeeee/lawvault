@@ -84,6 +84,21 @@ export interface AppSettings {
   max_agent_loops: number;
 }
 
+export interface DraftMaterial {
+  id: number;
+  law_id: string;
+  law_name: string;
+  article_number: string;
+  content: string;
+  added_at: string;
+}
+
+export interface CustomTemplate {
+  id: number;
+  name: string;
+  content: string;
+}
+
 // --- 核心搜索 ---
 
 export async function searchLaw(
@@ -136,7 +151,7 @@ export async function stopTask(eventId: string): Promise<void> {
 export async function startChatStream(
   query: string,
   contextChunks: string[],
-  mode: "simple" | "deep",
+  mode: "simple" | "deep" | "draft",
   onToken: (token: string) => void,
   externalEventId?: string
 ) {
@@ -291,4 +306,34 @@ export async function selectFolder(): Promise<string | null> {
 
 export async function stopChat(eventId: string): Promise<void> {
   return await invoke("stop_chat", { eventId });
+}
+
+// 素材库 API
+export async function addDraftMaterial(chunk: LawChunk): Promise<void> {
+  return await invoke("add_draft_material", { chunk });
+}
+
+export async function getDraftMaterials(): Promise<DraftMaterial[]> {
+  return await invoke("get_draft_materials");
+}
+
+export async function removeDraftMaterial(lawId: string): Promise<void> {
+  return await invoke("remove_draft_material", { lawId });
+}
+
+export async function clearDraftMaterials(): Promise<void> {
+  return await invoke("clear_draft_materials");
+}
+
+// 模版 API
+export async function addTemplate(name: string, content: string): Promise<void> {
+  return await invoke("add_template", { name, content });
+}
+
+export async function getTemplates(): Promise<CustomTemplate[]> {
+  return await invoke("get_templates");
+}
+
+export async function deleteTemplate(id: number): Promise<void> {
+  return await invoke("delete_template", { id });
 }

@@ -29,6 +29,8 @@ import { useHistory } from "./hooks/useHistory";
 import { TabBar } from "./components/TabBar";
 import { LawDetailView } from "./components/LawDetailView";
 import { Tab } from "./types";
+import { DraftingView } from "./components/DraftingView";
+import { useDrafting } from "./hooks/useDrafting";
 
 function App() {
   // === Tab State ===
@@ -67,7 +69,7 @@ function App() {
   const [agentEvent, setAgentEvent] = useState<AgentUpdateEvent | null>(null);
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const currentAgentIdRef = useRef<string | null>(null);
-
+  const { addMaterial } = useDrafting(); 
   const {
     history: searchHistory,
     add: addToHistory,
@@ -220,6 +222,22 @@ function App() {
     setActiveTabId(newTab.id);
   };
 
+  const openDraftingTab = () => {
+      const existing = tabs.find(t => t.type === "drafting");
+      if (existing) {
+          setActiveTabId(existing.id);
+      } else {
+          const newTab: Tab = {
+              id: "drafting-desk",
+              type: "drafting",
+              title: "写作助手",
+              isActive: true
+          };
+          setTabs([...tabs, newTab]);
+          setActiveTabId("drafting-desk");
+      }
+  };
+
   // === Handlers ===
 
   const handleSettingsClose = async () => {
@@ -353,6 +371,7 @@ function App() {
           onClose={closeTab}
           onNewSearch={openNewSearchTab}
           onReorder={setTabs}
+          onOpenDrafting={openDraftingTab}
         />
       </div>
 
@@ -561,31 +580,36 @@ function App() {
                 onViewFullText={openLawTab}
                 density={density}
                 isDeepThink={isDeepThink}
+                onAddMaterial={(law) => addMaterial(law)}
               />
             </div>
           </main>
         </div>
 
         {/* === View B: Law Detail Tabs === */}
-        {tabs.map((tab) => {
-          if (tab.type !== "law-detail" || tab.id === "home") return null;
-          return (
-            <div
-              key={tab.id}
-              className="absolute inset-0 bg-base-100"
-              style={{
-                display: activeTabId === tab.id ? "block" : "none",
-                zIndex: activeTabId === tab.id ? 10 : 0,
-              }}
-            >
-              {tab.data?.law && (
-                  <LawDetailView 
-                    law={tab.data.law} 
-                    onOpenLink={(targetLaw) => openLawTab(targetLaw)}
-                  />
-                )}
-            </div>
-          );
+        {tabs.map(tab => {
+           if (tab.type === 'law-detail') {
+               return (
+                 <div key={tab.id} className="absolute inset-0 bg-base-100" style={{ display: activeTabId === tab.id ? 'block' : 'none', zIndex: 10 }}>
+                    {tab.data?.law && (
+                        <LawDetailView 
+                            law={tab.data.law} 
+                            onOpenLink={openLawTab}
+                            onAddMaterial={(law) => addMaterial(law)} 
+                        />
+                    )}
+                 </div>
+               );
+           }
+           // View C: Drafting View
+           if (tab.type === 'drafting') {
+               return (
+                 <div key={tab.id} className="absolute inset-0 bg-base-100" style={{ display: activeTabId === tab.id ? 'block' : 'none', zIndex: 10 }}>
+                    <DraftingView />
+                 </div>
+               );
+           }
+           return null;
         })}
       </div>
 

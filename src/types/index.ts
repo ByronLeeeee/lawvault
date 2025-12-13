@@ -1,7 +1,7 @@
 // src/types/index.ts
 import { LawChunk } from "../services/api";
 
-export type TabType = "search" | "law-detail";
+export type TabType = "search" | "law-detail" | "drafting";
 
 export interface Tab {
   id: string;

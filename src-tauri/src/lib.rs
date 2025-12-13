@@ -201,6 +201,23 @@ pub struct SearchHistoryItem {
     timestamp: i64,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CustomTemplate {
+    id: i32,
+    name: String,
+    content: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DraftMaterial {
+    id: i32,
+    law_id: String,
+    law_name: String,
+    article_number: String,
+    content: String,
+    added_at: String,
+}
+
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub settings_path: PathBuf,
@@ -255,30 +272,8 @@ fn connect_sqlite(data_dir: &std::path::Path) -> Result<Connection, String> {
 // 连接 user_data.db (用户库)
 fn connect_user_db(db_path: &PathBuf) -> Result<Connection, String> {
     let conn = Connection::open(db_path).map_err(|e| format!("无法打开用户数据库: {}", e))?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS favorite_folders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS favorites (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            law_id TEXT UNIQUE,
-            law_name TEXT,
-            article_number TEXT,
-            content TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            tags TEXT
-        )",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
+    conn.execute("CREATE TABLE IF NOT EXISTS favorite_folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)", []).map_err(|e| e.to_string())?;
+    conn.execute("CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, law_id TEXT UNIQUE, law_name TEXT, article_number TEXT, content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, tags TEXT)", []).map_err(|e| e.to_string())?;
 
     let column_exists: bool = conn
         .prepare("PRAGMA table_info(favorites)")
@@ -289,18 +284,31 @@ fn connect_user_db(db_path: &PathBuf) -> Result<Connection, String> {
         })
         .map_err(|e| e.to_string())?
         .any(|res| res.unwrap_or(false));
-
     if !column_exists {
-        println!(">>> Migrating DB: Adding folder_id to favorites");
         conn.execute("ALTER TABLE favorites ADD COLUMN folder_id INTEGER", [])
             .map_err(|e| e.to_string())?;
     }
 
+    conn.execute("CREATE TABLE IF NOT EXISTS search_history (id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT UNIQUE, timestamp INTEGER)", []).map_err(|e| e.to_string())?;
+
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS search_history (
+        "CREATE TABLE IF NOT EXISTS draft_materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            query TEXT UNIQUE,
-            timestamp INTEGER
+            law_id TEXT UNIQUE,
+            law_name TEXT,
+            article_number TEXT,
+            content TEXT,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS custom_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            content TEXT
         )",
         [],
     )
@@ -308,7 +316,6 @@ fn connect_user_db(db_path: &PathBuf) -> Result<Connection, String> {
 
     Ok(conn)
 }
-
 fn load_settings_from_disk(path: &PathBuf) -> AppSettings {
     if let Ok(content) = fs::read_to_string(path) {
         if let Ok(settings) = serde_json::from_str(&content) {
@@ -790,6 +797,98 @@ fn check_db_status(state: tauri::State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
+fn add_draft_material(chunk: LawChunk, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    conn.execute(
+        "INSERT INTO draft_materials (law_id, law_name, article_number, content) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(law_id) DO NOTHING",
+        rusqlite::params![chunk.id, chunk.law_name, chunk.article_number, chunk.content],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_draft_materials(state: tauri::State<'_, AppState>) -> Result<Vec<DraftMaterial>, String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    let mut stmt = conn.prepare("SELECT id, law_id, law_name, article_number, content, added_at FROM draft_materials ORDER BY added_at DESC").map_err(|e| e.to_string())?;
+    let items = stmt
+        .query_map([], |row| {
+            Ok(DraftMaterial {
+                id: row.get(0)?,
+                law_id: row.get(1)?,
+                law_name: row.get(2)?,
+                article_number: row.get(3)?,
+                content: row.get(4)?,
+                added_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
+#[tauri::command]
+fn remove_draft_material(law_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    conn.execute(
+        "DELETE FROM draft_materials WHERE law_id = ?1",
+        rusqlite::params![law_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_draft_materials(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    conn.execute("DELETE FROM draft_materials", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn add_template(
+    name: String,
+    content: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    conn.execute("INSERT INTO custom_templates (name, content) VALUES (?1, ?2) ON CONFLICT(name) DO UPDATE SET content = excluded.content", rusqlite::params![name, content]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_templates(state: tauri::State<'_, AppState>) -> Result<Vec<CustomTemplate>, String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, content FROM custom_templates ORDER BY id DESC")
+        .map_err(|e| e.to_string())?;
+    let items = stmt
+        .query_map([], |row| {
+            Ok(CustomTemplate {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                content: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
+#[tauri::command]
+fn delete_template(id: i32, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let conn = connect_user_db(&state.user_db_path)?;
+    conn.execute(
+        "DELETE FROM custom_templates WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn search_law_by_name(
     query: String,
     limit: usize,
@@ -919,10 +1018,12 @@ fn get_full_text(source_file: String, state: tauri::State<'_, AppState>) -> Resu
     let conn = connect_sqlite(&data_dir)?;
     let raw_name = source_file.trim_end_matches(".txt");
 
-    let mut stmt = conn.prepare("SELECT full_text FROM full_texts WHERE law_name = ? LIMIT 1")
+    let mut stmt = conn
+        .prepare("SELECT full_text FROM full_texts WHERE law_name = ? LIMIT 1")
         .map_err(|e| e.to_string())?;
-    
-    let mut rows = stmt.query(rusqlite::params![raw_name])
+
+    let mut rows = stmt
+        .query(rusqlite::params![raw_name])
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -930,12 +1031,13 @@ fn get_full_text(source_file: String, state: tauri::State<'_, AppState>) -> Resu
     }
 
     let fuzzy_pattern = format!("%{}", raw_name);
-    
+
     let mut stmt = conn.prepare(
         "SELECT full_text FROM full_texts WHERE law_name LIKE ? ORDER BY length(law_name) ASC LIMIT 1"
     ).map_err(|e| e.to_string())?;
 
-    let mut rows = stmt.query(rusqlite::params![fuzzy_pattern])
+    let mut rows = stmt
+        .query(rusqlite::params![fuzzy_pattern])
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -946,8 +1048,9 @@ fn get_full_text(source_file: String, state: tauri::State<'_, AppState>) -> Resu
     let mut stmt = conn.prepare(
         "SELECT full_text FROM full_texts WHERE law_name LIKE ? ORDER BY length(law_name) ASC LIMIT 1"
     ).map_err(|e| e.to_string())?;
-    
-    let mut rows = stmt.query(rusqlite::params![loose_pattern])
+
+    let mut rows = stmt
+        .query(rusqlite::params![loose_pattern])
         .map_err(|e| e.to_string())?;
 
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -969,7 +1072,7 @@ async fn chat_stream(
     let settings = state.settings.lock().unwrap().clone();
 
     // 深度模式下，允许更多的上下文进入（例如 Top 10），普通模式 Top 5
-    let limit = if mode == "deep" {
+    let limit = if mode == "deep" || mode == "draft" {
         settings.chat_top_k * 2
     } else {
         settings.chat_top_k
@@ -1043,14 +1146,35 @@ async fn chat_stream(
         context_str
     );
 
+    let draft_prompt = format!(
+        r#"你是一位专业的法律文书起草专家。用户提供了一些参考法条和具体的写作要求。
+你的任务是根据这些素材，起草一份高质量的法律文书或段落。
+
+【参考法条/素材】：
+{}
+
+【要求】：
+1. 格式规范，用词严谨。
+2. 必须充分利用提供的素材中的法律依据。
+3. 如果用户提供了模版，请严格遵循模版的结构。
+4. 直接输出文书正文。
+5. 不要任何寒暄。
+"#,
+        context_str
+    );
+
     // 根据 mode 选择 prompt
-    let system_prompt = if mode == "deep" {
-        deep_prompt
-    } else {
-        simple_prompt
+    let system_prompt = match mode.as_str() {
+        "deep" => deep_prompt,
+        "draft" => draft_prompt,
+        _ => simple_prompt,
     };
 
-    let user_prompt = format!("用户问题：{}\n\n请开始分析：", query);
+    let user_prompt = if mode == "draft" {
+        format!("【写作指令】：{}\n\n请开始起草：", query)
+    } else {
+        format!("用户问题：{}\n\n请开始分析：", query)
+    };
     let event_id_for_task = event_id.clone();
 
     let chat_task = tauri::async_runtime::spawn(async move {
@@ -1103,6 +1227,7 @@ async fn chat_stream(
                                     }
                                 }
                             }
+                             let _ = app.emit(&event_id_for_task, "[DONE]"); 
                         }
                         Err(e) => {
                             let _ = app.emit(&event_id_for_task, format!("[Error: {}]", e));
@@ -1121,7 +1246,7 @@ async fn chat_stream(
         let mut tasks = state.chat_tasks.lock().unwrap();
         tasks.insert(event_id, chat_task);
     }
-
+   
     Ok(())
 }
 
@@ -1150,7 +1275,7 @@ fn stop_task(event_id: String, state: tauri::State<'_, AppState>) -> Result<(), 
         flag.store(false, Ordering::Relaxed); // 设置开关为 false
         println!(">>> Agent loop abort signaled: {}", event_id);
     }
-    
+
     Ok(())
 }
 
@@ -1442,7 +1567,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search_law,
             chat_stream,
-            stop_chat, 
+            stop_chat,
             stop_task,
             get_settings,
             save_settings,
@@ -1464,6 +1589,13 @@ pub fn run() {
             get_folders,
             delete_folder,
             move_favorite,
+            add_draft_material,
+            get_draft_materials,
+            remove_draft_material,
+            clear_draft_materials,
+            add_template,
+            get_templates,
+            delete_template
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

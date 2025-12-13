@@ -17,6 +17,7 @@ interface ResultsDisplayProps {
   onViewFullText: (law: LawChunk) => void;
   density: "comfortable" | "compact";
   isDeepThink?: boolean;
+  onAddMaterial: (law: LawChunk) => void;
 }
 
 export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
@@ -28,6 +29,7 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
   onViewFullText,
   density = "comfortable",
   isDeepThink = false,
+  onAddMaterial,
 }) => {
   const renderContent = () => {
     if (isLoading) {
@@ -151,6 +153,7 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({
             query={query || ""}
             onViewFullText={onViewFullText}
             density={density}
+            onAddMaterial={onAddMaterial}
           />
         ))}
       </motion.div>

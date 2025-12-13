@@ -10,16 +10,18 @@ import {
   Star,
   MapPin,
   Copy,
+  PenTool,
 } from "lucide-react";
 import { highlightText } from "../utils/highlight";
 import { toast } from "react-hot-toast";
-import { useFavorites } from "../hooks/useFavorites"; // 引入新的 Hook
+import { useFavorites } from "../hooks/useFavorites";
 
 interface ResultCardProps {
   law: LawChunk;
   query: string;
   onViewFullText: (law: LawChunk) => void;
   density: "comfortable" | "compact";
+  onAddMaterial: (law: LawChunk) => void;
 }
 
 const cardVariants: Variants = {
@@ -36,6 +38,7 @@ export const ResultCard: React.FC<ResultCardProps> = ({
   query,
   onViewFullText,
   density,
+  onAddMaterial,
 }) => {
   // 使用自定义 Hook 获取收藏状态和操作方法
   const { isFavorite, add, remove } = useFavorites();
@@ -51,6 +54,11 @@ export const ResultCard: React.FC<ResultCardProps> = ({
     } else {
       await add(law);
     }
+  };
+
+  const handleAddToDraft = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onAddMaterial(law);
   };
 
   const formatDate = (dateStr: string) => {
@@ -113,7 +121,15 @@ export const ResultCard: React.FC<ResultCardProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {/* 收藏按钮 (紧凑模式) */}
+            {/* 按钮 (紧凑模式) */}
+             <button
+              className="btn btn-square btn-xs btn-ghost opacity-0 group-hover:opacity-100 transition-opacity hover:text-primary"
+              onClick={handleAddToDraft}
+              title="加入写作素材"
+            >
+              <PenTool size={14} />
+            </button>
+
             <button
               className={`btn btn-square btn-xs btn-ghost transition-colors ${
                 favored ? "text-yellow-500 hover:text-yellow-600" : "text-base-content/30 hover:text-yellow-500 opacity-0 group-hover:opacity-100"
@@ -198,7 +214,14 @@ export const ResultCard: React.FC<ResultCardProps> = ({
         </div>
 
         <div className="card-actions justify-end items-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {/* 收藏按钮 (舒适模式) */}
+          {/* 按钮 (舒适模式) */}
+          <button
+            onClick={handleAddToDraft}
+            className="btn btn-xs btn-ghost gap-1 hover:text-primary hover:bg-primary/5"
+          >
+            <PenTool size={14} /> 加入素材
+          </button>
+          
           <button
             onClick={handleToggleFavorite}
             className={`btn btn-xs btn-ghost gap-1 transition-all ${

@@ -10,12 +10,14 @@ import {
   ChevronUp,
   ChevronDown,
   X,
+  PenTool,
 } from "lucide-react";
 import { CustomPopover } from "./CustomPopover";
 
 interface LawDetailViewProps {
   law: LawChunk;
   onOpenLink: (law: LawChunk) => void;
+  onAddMaterial: (law: LawChunk) => void;
 }
 
 interface TOCItem {
@@ -33,7 +35,7 @@ const chapterClasses =
 const sectionClasses =
   "text-xl font-bold text-left mt-8 mb-4 pl-4 border-l-4 border-primary text-base-content/80";
 const articleContainerClasses =
-  "mb-2 py-2 px-2 rounded-lg transition-colors duration-500 scroll-mt-24";
+  "mb-2 py-2 px-2 rounded-lg transition-colors duration-500 scroll-mt-24 relative hover:bg-base-200/30";
 const articleLabelClasses = "font-bold mr-2 text-base-content select-none";
 const paragraphClasses =
   "mb-2 text-lg leading-8 text-justify text-base-content/80 indent-8";
@@ -58,6 +60,7 @@ function useDebounce<T>(value: T, delay: number): T {
 export const LawDetailView: React.FC<LawDetailViewProps> = ({
   law,
   onOpenLink,
+  onAddMaterial,
 }) => {
   const [fullText, setFullText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -292,6 +295,23 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({
         prev.visible ? { ...prev, content: "加载失败" } : prev
       );
     }
+  };
+
+  const handleAddSingleMaterial = (articleNum: string, content: string) => {
+      const chunk: LawChunk = {
+          id: `${law.law_name}-${normalizeId(articleNum)}`, // 生成唯一ID
+          law_name: law.law_name,
+          article_number: articleNum,
+          content: content,
+          source_file: law.source_file,
+          category: law.category,
+          region: law.region,
+          publish_date: law.publish_date,
+          part: "",
+          chapter: "",
+          _distance: 0
+      };
+      onAddMaterial(chunk);
   };
 
   const cleanLawName = (raw: string | undefined): string | null => {
@@ -537,28 +557,43 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({
 
     let currentArticleId = "";
     let currentArticleContent: string[] = [];
+    let currentArticleNumStr = ""; 
     let isPreamble = true;
 
     const flushArticle = () => {
       if (currentArticleId) {
         const fullContent = currentArticleContent.join("\n");
+        const articleNum = currentArticleNumStr;
         resultNodes.push(
           <div
             key={currentArticleId}
             id={currentArticleId}
             className={`${articleContainerClasses} group relative`}
           >
-            <button
-              onClick={() => handleCopy(currentArticleId, fullContent)}
-              className="absolute right-2 top-2 p-1.5 text-base-content/30 hover:text-primary hover:bg-base-200 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-              title="复制本条"
-            >
-              {copiedArticleId === currentArticleId ? (
-                <Check size={16} className="text-success" />
-              ) : (
-                <Copy size={16} />
-              )}
-            </button>
+            {/* 悬浮操作栏 */}
+            <div className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-base-100/80 backdrop-blur rounded-lg p-1 shadow-sm border border-base-200">
+                {/* 1. 加入素材按钮 */}
+                <button
+                  onClick={() => handleAddSingleMaterial(articleNum, fullContent)}
+                  className="p-1.5 text-base-content/50 hover:text-primary hover:bg-base-200 rounded-md transition-colors"
+                  title="加入写作素材"
+                >
+                  <PenTool size={14} />
+                </button>
+                
+                {/* 2. 复制按钮 */}
+                <button
+                  onClick={() => handleCopy(currentArticleId, fullContent)}
+                  className="p-1.5 text-base-content/50 hover:text-primary hover:bg-base-200 rounded-md transition-colors"
+                  title="复制本条"
+                >
+                  {copiedArticleId === currentArticleId ? (
+                    <Check size={14} className="text-success" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </button>
+            </div>
             {currentArticleContent.map((line, idx) => {
               if (idx === 0) {
                 const match = line.match(articlePattern);
@@ -657,7 +692,7 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({
       if (articleMatch) {
         flushArticle();
         isPreamble = false;
-
+        currentArticleNumStr = articleMatch[1];
         currentArticleId = `article-${normalizeId(articleMatch[1])}`;
         currentArticleContent.push(trimmedLine);
         return;
@@ -876,18 +911,30 @@ export const LawDetailView: React.FC<LawDetailViewProps> = ({
               {law.law_name}
             </h3>
           </div>
-          {!showSearch && (
+
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setShowSearch(true);
-                setTimeout(() => searchInputRef.current?.select(), 50);
-              }}
-              className="btn btn-ghost btn-sm btn-circle text-base-content/50 hover:text-primary ml-4"
-              title="页内查找 (Ctrl+F)"
+              onClick={() => onAddMaterial(law)}
+              className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary"
+              title="将本法条加入写作素材库"
             >
-              <Search size={18} />
+              <PenTool size={16} />
+              <span className="hidden sm:inline text-xs">全文加入素材</span>
             </button>
-          )}
+
+            {!showSearch && (
+              <button
+                onClick={() => {
+                  setShowSearch(true);
+                  setTimeout(() => searchInputRef.current?.select(), 50);
+                }}
+                className="btn btn-ghost btn-sm btn-circle text-base-content/50 hover:text-primary ml-4"
+                title="页内查找 (Ctrl+F)"
+              >
+                <Search size={18} />
+              </button>
+            )}
+          </div>
         </header>
 
         <div
