@@ -49,63 +49,34 @@ const PLANNER_PROMPT: &str = r#"
 "#;
 
 const EXECUTOR_PROMPT: &str = r#"
-你是检索结果评估器。评估刚才的向量检索结果，决定是否需要调整后续任务。
+你是检索结果评估器。你的核心职责是：**根据当前的搜索结果，动态修正后续的检索计划**。
 
 上下文：
-用户问题："{user_query}"
-执行任务："{current_task}"
+- 用户原始问题："{user_query}"
+- 刚刚执行的任务："{current_task}"
 
 检索结果：
 {search_results}
 
-待办任务：
+待办任务清单：
 {remaining_todo_list}
 
-评估流程：
+**决策逻辑（必须严格遵守）**：
 
-步骤1：判断检索质量
-- 高相关：法条直接解答当前任务
-- 部分相关：法条提供线索但不完整
-- 不相关：检索词可能不准确
+1. **评估结果质量**：
+   - 如果检索结果为空或完全不相关 -> **必须**在待办清单头部插入一个新的、换了关键词的检索任务（例如将“量刑”改为“刑法 第X条”）。
+   - 如果检索结果非常完美 -> 继续执行原定计划。
 
-步骤2：检查信息完整性
-针对用户原始问题，当前信息是否足够给出完整答案？
-- 充分：清空待办清单
-- 不足：继续执行或调整任务
+2. **发现新线索**：
+   - 如果检索到的法条提到了一个新的关键法律概念（例如搜“离婚”时发现了“离婚冷静期”规定），且这对回答用户问题很重要 -> **必须**将查询该新概念加入待办清单。
 
-步骤3：决策
+3. **去重与精简**：
+   - 检查待办清单，如果后续任务已经被当前的检索结果覆盖了，请将其删除。
 
-情况A：检索结果不相关
-更换更精确的法律术语重新检索。
-示例：
-"thought": "当前检索词过于宽泛，改用具体罪名检索",
-"new_todo_list": ["盗窃罪的立案标准和量刑幅度"]
-
-情况B：发现新的法律适用方向
-基于检索到的法条，追加相关任务。
-示例：
-"thought": "检索到该行为同时触犯民事和刑事责任，需补充刑事部分",
-"new_todo_list": ["原任务A", "新增：故意伤害罪的构成要件"]
-
-情况C：信息已充分
-示例：
-"thought": "已获取合同违约的法律规定和司法解释，足以回答用户问题",
-"new_todo_list": []
-
-情况D：删减冗余任务
-示例：
-"thought": "用户未提及地区且已获得国家层面法律，删除地方法规查询任务",
-"new_todo_list": ["保留任务A"]
-
-规则：
-1. 不要重复检索相似概念
-2. 待办任务总数不超过5个
-3. 聚焦用户核心诉求，避免过度检索
-
-输出格式（仅JSON，无其他内容）：
+**输出格式（仅 JSON）**：
 {
-  "thought": "50字以内的分析",
-  "new_todo_list": ["任务A", "任务B"]
+  "thought": "深刻分析：刚才搜到了什么？缺什么？为什么要修改（或保持）清单？",
+  "new_todo_list": ["任务A", "任务B"...]
 }
 "#;
 
@@ -429,12 +400,44 @@ async fn call_llm(
 }
 
 fn clean_json_str(s: &str) -> String {
-    s.trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim()
-        .to_string()
+    let mut content = s.to_string();
+
+    // 1. 移除 <think>...</think>
+    while let Some(start) = content.find("<think>") {
+        if let Some(end) = content.find("</think>") {
+            if end > start {
+                content.replace_range(start..end + 8, "");
+            } else {
+                content = content.replace("<think>", "").replace("</think>", "");
+            }
+        } else {
+            content = content.replace("<think>", "");
+        }
+    }
+
+    // 2. 智能提取 JSON (Array 或 Object)
+    let first_brace = content.find('{');
+    let first_bracket = content.find('[');
+    
+    let (start, end) = match (first_brace, first_bracket) {
+        (Some(brace), Some(bracket)) => {
+            if brace < bracket {
+                // 对象在数组前面，说明是 {...}
+                (brace, content.rfind('}'))
+            } else {
+                // 数组在对象前面，说明是 [...]
+                (bracket, content.rfind(']'))
+            }
+        },
+        (Some(brace), None) => (brace, content.rfind('}')),
+        (None, Some(bracket)) => (bracket, content.rfind(']')),
+        (None, None) => return content, // 没找到，直接返回原文本尝试解析
+    };
+
+    match (start, end) { // 这里的 start/end 是 usize，不是 Option
+        (s, Some(e)) if s <= e => content[s..=e].to_string(),
+        _ => content // 提取失败，返回原样
+    }
 }
 
 // ==========================================
@@ -646,24 +649,39 @@ async fn start_agent_search(
         .unwrap();
 
     let plan_prompt = PLANNER_PROMPT.replace("{user_query}", &query);
-
+    println!(">>> Agent Planning...");
     let mut todo_list: Vec<String> = match call_llm(&model, &plan_prompt, &base_url, &api_key).await
     {
         Ok(json) => {
+            println!(">>> LLM Raw Output: {}", json);
             let clean = clean_json_str(&json);
-            serde_json::from_str::<Vec<String>>(&clean).unwrap_or_else(|_| vec![query.clone()])
+            println!(">>> Cleaned JSON: {}", clean);
+            match serde_json::from_str::<Vec<String>>(&clean) {
+                Ok(list) => {
+                    println!(">>> Parsed Task List: {:?}", list);
+                    list
+                }
+                Err(e) => {
+                    println!(">>> JSON Parse Error: {}", e);
+                    // 如果解析失败，回退到原始查询
+                    vec![query.clone()]
+                }
+            }
         }
         Err(_) => vec![query.clone()],
     };
 
     let mut loop_count = 0;
-    let limit = if max_loops <= 0 { 20 } else { max_loops };
+    let limit = if max_loops <= 0 { 99 } else { max_loops };
 
     while !todo_list.is_empty() && loop_count < limit {
         check_abort!();
         loop_count += 1;
         let current_task = todo_list.remove(0);
-
+        println!(
+            ">>> [Agent] Step {}: Executing task '{}'",
+            loop_count, current_task
+        );
         window
             .emit(
                 "agent-update",
@@ -682,11 +700,18 @@ async fn start_agent_search(
         check_abort!();
 
         let mut result_text = String::new();
+        let mut found_count = 0;
+        let step_max_chunks = 10; 
+
         match search_res {
             Ok(chunks) => {
                 for r in chunks {
                     // 1.2 阈值过滤
                     if r._distance < 1.2 {
+                        if found_count >= step_max_chunks {
+                            break;
+                        }
+                        found_count += 1;
                         // 收集文本给 Agent 看
                         result_text.push_str(&format!(
                             "法规：《{}》{}\n内容：{}\n\n",
@@ -708,6 +733,9 @@ async fn start_agent_search(
 
         if result_text.trim().is_empty() {
             result_text = "未找到直接相关法条。".to_string();
+            println!(">>> [Agent] No results found for this task.");
+        } else {
+            println!(">>> [Agent] Found {} relevant chunks.", found_count);
         }
         check_abort!();
         window
@@ -736,19 +764,23 @@ async fn start_agent_search(
             Ok(json) => {
                 let clean = clean_json_str(&json);
                 if let Ok(res) = serde_json::from_str::<ExecutorResponse>(&clean) {
+                    println!(">>> [Agent] Thought: {}", res.thought);
+                    println!(">>> [Agent] Updated List: {:?}", res.new_todo_list);
                     todo_list = res.new_todo_list;
                     completed_log.push(CompletedTask {
                         task: current_task,
                         thought: res.thought,
                     });
                 } else {
+                    println!(">>> [Agent] JSON Parse Failed: {}", clean);
                     completed_log.push(CompletedTask {
                         task: current_task,
                         thought: "解析思考结果失败，继续执行原计划。".into(),
                     });
                 }
             }
-            Err(_) => {
+            Err(e) => {
+                println!(">>> [Agent] LLM Reflection Error: {}", e);
                 completed_log.push(CompletedTask {
                     task: current_task,
                     thought: "LLM 调用失败，跳过此步分析。".into(),
@@ -774,7 +806,10 @@ async fn start_agent_search(
             },
         )
         .unwrap();
-
+    println!(
+        ">>> [Agent] Finished. Total chunks found: {}",
+        all_found_chunks.len()
+    );
     Ok(all_found_chunks)
 }
 
@@ -1159,6 +1194,7 @@ async fn chat_stream(
 3. 如果用户提供了模版，请严格遵循模版的结构。
 4. 直接输出文书正文。
 5. 不要任何寒暄。
+6. 不要使用超过提供法条之外的法条文本。
 "#,
         context_str
     );
@@ -1227,7 +1263,7 @@ async fn chat_stream(
                                     }
                                 }
                             }
-                             let _ = app.emit(&event_id_for_task, "[DONE]"); 
+                            let _ = app.emit(&event_id_for_task, "[DONE]");
                         }
                         Err(e) => {
                             let _ = app.emit(&event_id_for_task, format!("[Error: {}]", e));
@@ -1246,7 +1282,7 @@ async fn chat_stream(
         let mut tasks = state.chat_tasks.lock().unwrap();
         tasks.insert(event_id, chat_task);
     }
-   
+
     Ok(())
 }
 

@@ -459,7 +459,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </span>
                         <span className="label-text-alt">
                           {config.max_agent_loops <= 0
-                            ? "无上限"
+                            ? "∞ (自动托管)"
                             : `${config.max_agent_loops} 次`}
                         </span>
                       </label>
@@ -467,7 +467,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <input
                           type="range"
                           min="0"
-                          max="10"
+                          max="30"
                           step="1"
                           value={config.max_agent_loops}
                           onChange={(e) =>
@@ -480,7 +480,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         />
                         <div
                           className="tooltip"
-                          data-tip="设置为 0 表示无上限（小心死循环）"
+                          data-tip="设置为 0 表示由AI自动判断结束时机 (上限99轮)"
                         >
                           <input
                             type="number"
@@ -498,7 +498,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <label className="label">
                         <span className="label-text-alt text-base-content/50">
                           允许 AI 自动修正计划并重新搜索的最大次数。推荐 3-5
-                          次。
+                          次。设为 0 时，AI 会一直搜索直到它认为信息充足（适合复杂案件）。
                         </span>
                       </label>
                     </div>
