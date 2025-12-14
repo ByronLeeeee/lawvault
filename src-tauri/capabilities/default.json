@@ -19,6 +19,7 @@
     "fs:allow-read-file",
     "fs:allow-read-dir",
     "updater:default",
+    "opener:default",
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [{ "path": "**" }] 

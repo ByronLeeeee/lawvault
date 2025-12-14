@@ -1,8 +1,9 @@
-// frontend/src/components/UpdateModal.tsx
+// src/components/UpdateModal.tsx
 
 import React from "react";
 import { ExternalLink, X, Info, Github } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener"; 
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { toast } from "react-hot-toast";
 
 export interface GithubUpdate {
   version: string;
@@ -28,8 +29,30 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   };
 
   const handleGoToDownload = async () => {
-    await openUrl(update.html_url);
-    onClose();
+    try {
+      if (!update.html_url) {
+        toast.error("下载链接无效");
+        return;
+      }
+      
+      console.log("尝试打开链接:", update.html_url);
+      
+      // 调用系统浏览器打开链接
+      await openUrl(update.html_url);
+      
+      onClose();
+    } catch (e) {
+      console.error("打开浏览器失败:", e);
+      toast.error(`无法打开浏览器: ${String(e)}`);
+      
+      // 备选方案：尝试复制链接到剪贴板
+      try {
+        await navigator.clipboard.writeText(update.html_url);
+        toast("链接已复制到剪贴板，请手动打开", { icon: "📋" });
+      } catch (err) {
+        // 忽略复制失败
+      }
+    }
   };
 
   return (
