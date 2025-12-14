@@ -1,6 +1,6 @@
 [package]
 name = "LawVault"
-version = "0.2.5"
+version = "0.2.6"
 description = "Local Law Base"
 authors = ["ByronLeeeee"]
 license = "MIT"
