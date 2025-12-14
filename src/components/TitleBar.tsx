@@ -17,7 +17,7 @@ export const TitleBar = () => {
           className="w-6 h-6 object-contain drop-shadow-sm"
         />
         <span className="text-sm font-bold text-base-content/80 tracking-wide">
-          智能法条库
+          LawVault - 智能法条库
         </span>
       </div>
 
