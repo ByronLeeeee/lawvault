@@ -18,6 +18,7 @@ import {
   Settings,
   HardDrive,
   FolderOpen,
+  Github,
 } from "lucide-react";
 import {
   getSettings,
@@ -27,6 +28,7 @@ import {
   selectFolder,
 } from "../services/api";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -129,6 +131,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         error: (err) => `测试失败: ${err.message}`,
       })
       .finally(() => setIsTesting(false));
+  };
+
+  const handleOpenBrowser = async (url: string) => {
+    try {
+      await openUrl(url);
+    } catch (e) {
+      toast.error("打开浏览器失败，请手动访问");
+      console.error(e);
+    }
   };
 
   if (!isOpen) return null;
@@ -566,7 +577,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div>
                     <h2 className="text-2xl font-extrabold text-base-content">
-                      智能法条库
+                      LawVault - 智能法条库
                     </h2>
                     <p className="text-sm text-base-content/60 font-mono mt-1">
                       LawVault v{appVersion}
@@ -601,14 +612,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-sm mt-2 bg-base-100 p-3 rounded-lg border border-base-content/5">
-                        <Mail size={16} className="text-primary/70" />
-                        <a
-                          href="mailto:liboyang@lslby.com"
-                          className="link link-hover font-mono"
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          onClick={() =>
+                            handleOpenBrowser("mailto:liboyang@lslby.com")
+                          }
+                          className="btn btn-sm btn-ghost bg-base-100 border-base-300 flex-1 gap-2 font-normal"
                         >
-                          liboyang@lslby.com
-                        </a>
+                          <Mail size={16} className="text-primary/70" />{" "}
+                          邮件联系：liboyang@lslby.com
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleOpenBrowser(
+                              "https://github.com/byronleeeee/lawvault"
+                            )
+                          }
+                          className="btn btn-sm btn-ghost bg-base-100 border-base-300 flex-1 gap-2 font-normal"
+                        >
+                          <Github size={16} /> 访问项目 GitHub 地址
+                        </button>
                       </div>
                     </div>
                   </div>
