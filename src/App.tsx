@@ -18,7 +18,6 @@ import {
   checkDbStatus,
 } from "./services/api";
 import { AnimatePresence, motion } from "framer-motion";
-import { Settings, Star } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { UpdateModal, GithubUpdate } from "./components/UpdateModal";
 import { startAgentSearch, AgentUpdateEvent, stopTask } from "./services/api";
@@ -69,7 +68,7 @@ function App() {
   const [agentEvent, setAgentEvent] = useState<AgentUpdateEvent | null>(null);
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const currentAgentIdRef = useRef<string | null>(null);
-  const { addMaterial } = useDrafting(); 
+  const { addMaterial } = useDrafting();
   const {
     history: searchHistory,
     add: addToHistory,
@@ -223,19 +222,19 @@ function App() {
   };
 
   const openDraftingTab = () => {
-      const existing = tabs.find(t => t.type === "drafting");
-      if (existing) {
-          setActiveTabId(existing.id);
-      } else {
-          const newTab: Tab = {
-              id: "drafting-desk",
-              type: "drafting",
-              title: "写作助手",
-              isActive: true
-          };
-          setTabs([...tabs, newTab]);
-          setActiveTabId("drafting-desk");
-      }
+    const existing = tabs.find((t) => t.type === "drafting");
+    if (existing) {
+      setActiveTabId(existing.id);
+    } else {
+      const newTab: Tab = {
+        id: "drafting-desk",
+        type: "drafting",
+        title: "写作助手",
+        isActive: true,
+      };
+      setTabs([...tabs, newTab]);
+      setActiveTabId("drafting-desk");
+    }
   };
 
   // === Handlers ===
@@ -372,6 +371,8 @@ function App() {
           onNewSearch={openNewSearchTab}
           onReorder={setTabs}
           onOpenDrafting={openDraftingTab}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenFavorites={() => setIsFavoritesOpen(true)}
         />
       </div>
 
@@ -383,31 +384,7 @@ function App() {
         <div
           className="h-full w-full overflow-hidden flex flex-col"
           style={{ display: activeTabId === "home" ? "flex" : "none" }}
-        >
-          {/* NavBar */}
-          <nav className="w-full max-w-6xl mx-auto px-4 py-4 mt-2 flex justify-between items-center shrink-0">
-            <div className="flex items-center gap-2 opacity-50 hover:opacity-100 transition-opacity cursor-default">
-              <span className="text-sm font-bold tracking-wider uppercase text-base-content">
-                智能法条库
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary"
-              >
-                <Settings className="h-4 w-4" />{" "}
-                <span className="hidden sm:inline">设置</span>
-              </button>
-              <button
-                onClick={() => setIsFavoritesOpen(true)}
-                className="btn btn-ghost btn-sm gap-2 text-base-content/70 hover:text-primary"
-              >
-                <Star className="h-4 w-4" />{" "}
-                <span className="hidden sm:inline">我的收藏</span>
-              </button>
-            </div>
-          </nav>
+        >       
 
           <main className="grow w-full overflow-y-auto scroll-smooth">
             <div className="container max-w-4xl mx-auto px-4 pb-20">
@@ -587,29 +564,43 @@ function App() {
         </div>
 
         {/* === View B: Law Detail Tabs === */}
-        {tabs.map(tab => {
-           if (tab.type === 'law-detail') {
-               return (
-                 <div key={tab.id} className="absolute inset-0 bg-base-100" style={{ display: activeTabId === tab.id ? 'block' : 'none', zIndex: 10 }}>
-                    {tab.data?.law && (
-                        <LawDetailView 
-                            law={tab.data.law} 
-                            onOpenLink={openLawTab}
-                            onAddMaterial={(law) => addMaterial(law)} 
-                        />
-                    )}
-                 </div>
-               );
-           }
-           // View C: Drafting View
-           if (tab.type === 'drafting') {
-               return (
-                 <div key={tab.id} className="absolute inset-0 bg-base-100" style={{ display: activeTabId === tab.id ? 'block' : 'none', zIndex: 10 }}>
-                    <DraftingView />
-                 </div>
-               );
-           }
-           return null;
+        {tabs.map((tab) => {
+          if (tab.type === "law-detail") {
+            return (
+              <div
+                key={tab.id}
+                className="absolute inset-0 bg-base-100"
+                style={{
+                  display: activeTabId === tab.id ? "block" : "none",
+                  zIndex: 10,
+                }}
+              >
+                {tab.data?.law && (
+                  <LawDetailView
+                    law={tab.data.law}
+                    onOpenLink={openLawTab}
+                    onAddMaterial={(law) => addMaterial(law)}
+                  />
+                )}
+              </div>
+            );
+          }
+          // View C: Drafting View
+          if (tab.type === "drafting") {
+            return (
+              <div
+                key={tab.id}
+                className="absolute inset-0 bg-base-100"
+                style={{
+                  display: activeTabId === tab.id ? "block" : "none",
+                  zIndex: 10,
+                }}
+              >
+                <DraftingView />
+              </div>
+            );
+          }
+          return null;
         })}
       </div>
 
